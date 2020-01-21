@@ -12,10 +12,13 @@ from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
 
 # Size of the world to be rendered
-worldSize = 3 
+#worldSize = 3
 
 # Size of the map
-mapSize = 8
+
+mapSize = 32
+
+view_distance = 4
 
 DAYLENGTH = 10000
 BASESKY = [0.5,0.69,1]
@@ -125,6 +128,13 @@ def normalize(position):
     x, y, z = (int(round(x)), int(round(y)), int(round(z)))
     return (x, y, z)
 
+# Sectorize, but for the world (clamps to mapSize)
+def sectorizeWorld(position):
+    x, y, z = normalize(position)
+    x, y, z = x // SECTOR_SIZE, y // SECTOR_SIZE, z // SECTOR_SIZE
+    x = x % (mapSize/2)
+    y = y % (mapSize/2)
+    return (x, 0, z)
 
 def sectorize(position):
     """ Returns a tuple representing the sector for the given `position`.
@@ -271,10 +281,10 @@ class Model(object):
             Whether or not to immediately remove block from canvas.
 
         """
-        print(self.world[position])
-        print(position)
-        print(sectorize(position))
-        del self.world[position]
+        pos = list(position)
+        pos[0] = pos[0] % (mapSize * SECTOR_SIZE * 0.5) # 
+        pos[2] = pos[2] % (mapSize * SECTOR_SIZE * 0.5)
+        del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
             if position in self.shown:
@@ -317,7 +327,7 @@ class Model(object):
         #if z < worldSize/2: z = worldSize/2
         #if x > worldSize/2: x = -worldSize/2
         #if z > worldSize/2: z = -worldSize/2
-        texture = self.world[(int(position[0]) % (mapSize/2 * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize/2 * SECTOR_SIZE))]
+        texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE * 0.5),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE * 0.5))]
         self.shown[position] = texture
         if immediate:
             self._show_block(position, texture)
@@ -369,14 +379,14 @@ class Model(object):
 
         """
         self._shown.pop(position).delete()
-
+    # Gets the given sector
     def get_sector(self, sector):
-        # Gets the given sector
+        
         sec = list(sector)
-        if sec[0] > (worldSize/2): sec[0] = sec[0] % (worldSize/2)
-        if sec[2] > (worldSize/2): sec[2] = sec[2] % (worldSize/2)
-        if sec[0] <= -(worldSize/2): sec[0] = (worldSize/2) - (-sec[0] % (worldSize/2))
-        if sec[2] <= -(worldSize/2): sec[2] = (worldSize/2) - (-sec[2] % (worldSize/2))
+        if sec[0] >= (mapSize/2): sec[0] = sec[0] % (mapSize/2)
+        if sec[2] >= (mapSize/2): sec[2] = sec[2] % (mapSize/2)
+        if sec[0] < -(mapSize/2): sec[0] = (mapSize/2) - (-sec[0] % (mapSize/2))
+        if sec[2] < -(mapSize/2): sec[2] = (mapSize/2) - (-sec[2] % (mapSize/2))
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -384,8 +394,6 @@ class Model(object):
         drawn to the canvas.
 
         """
-        print("Map sector")
-        print(mapSector)
         for position in self.get_sector(mapSector):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
@@ -395,7 +403,10 @@ class Model(object):
             #pos[2] = int(pos[2]) + (mapSector * SECTOR_SIZE)
             p = (int(pos[0]) + ((mapSector[0]) * SECTOR_SIZE),int(pos[1]) + (mapSector[1] * SECTOR_SIZE),int(pos[2]) + (mapSector[2] * SECTOR_SIZE))
             if p not in self.shown and self.exposed(p):
-                self.show_block(p, True) # Map position is the position of the sector on the map
+                try:
+                    self.show_block(p, False) # Map position is the position of the sector on the map
+                except:
+                    print("EXCEPTION")
 
     def hide_sector(self, sector):
         """ Ensure all blocks in the given sector that should be hidden are
@@ -414,7 +425,7 @@ class Model(object):
         """
         before_set = set()
         after_set = set()
-        pad = 1
+        pad = view_distance
         for dx in xrange(-pad, pad + 1):
             for dy in [0]:  # xrange(-pad, pad + 1):
                 for dz in xrange(-pad, pad + 1):
@@ -430,12 +441,8 @@ class Model(object):
         hide = before_set - after_set
         for sector in show:
             self.show_sector(sector)
-            #print("Shown:")
-            #print(sector)
         for sector in hide:
             self.hide_sector(sector)
-            #print("Hidden:")
-            #print(sector)
 
     def _enqueue(self, func, *args):
         """ Add `func` to the internal queue.
@@ -685,6 +692,8 @@ class Window(pyglet.window.Window):
         # tall grass. If >= .5, you'll fall through the ground.
         pad = 0.25
         p = list(position)
+        p[0] = p[0] % (mapSize * SECTOR_SIZE * 0.5)
+        p[2] = p[2] % (mapSize * SECTOR_SIZE * 0.5)
         np = normalize(position)
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
