@@ -16,7 +16,8 @@ from pyglet.window import key, mouse
 
 # Size of the map
 
-mapSize = 32
+# 1/128 real scale
+mapSize = (40.075 * 1000000) / 16 / 128
 
 view_distance = 4
 
@@ -132,8 +133,8 @@ def normalize(position):
 def sectorizeWorld(position):
     x, y, z = normalize(position)
     x, y, z = x // SECTOR_SIZE, y // SECTOR_SIZE, z // SECTOR_SIZE
-    x = x % (mapSize/2)
-    y = y % (mapSize/2)
+    x = x % (mapSize)
+    y = y % (mapSize)
     return (x, 0, z)
 
 def sectorize(position):
@@ -196,14 +197,14 @@ class Model(object):
 
         """
         #update_sectors(self):
-        n = int((mapSize*SECTOR_SIZE)/2)  # 1/2 width and height of world map
-        s = 1  # step size
-        y = 0  # initial y height
-        for x in xrange(-n, n + 1, s):
-            for z in xrange(-n, n + 1, s):
+        #n = int((initialSectors*SECTOR_SIZE))  # 1/2 width and height of world map TODO fix /2
+        #s = 1  # step size
+        #y = 0  # initial y height
+        #for x in xrange(-n, n + 1, s):
+        #    for z in xrange(-n, n + 1, s):
                 # create a layer stone an grass everywhere.
-                self.add_block((x, y - 2, z), GRASS, immediate=False)
-                self.add_block((x, y - 3, z), STONE, immediate=False)
+        #        self.add_block((x, y - 2, z), GRASS, immediate=False)
+        #        self.add_block((x, y - 3, z), STONE, immediate=False)
                 #if x in (-n, n) or z in (-n, n):
                     # create outer walls.
                 #    for dy in xrange(-2, 3):
@@ -282,8 +283,8 @@ class Model(object):
 
         """
         pos = list(position)
-        pos[0] = pos[0] % (mapSize * SECTOR_SIZE * 0.5) # 
-        pos[2] = pos[2] % (mapSize * SECTOR_SIZE * 0.5)
+        pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
+        pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
         del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
@@ -327,12 +328,15 @@ class Model(object):
         #if z < worldSize/2: z = worldSize/2
         #if x > worldSize/2: x = -worldSize/2
         #if z > worldSize/2: z = -worldSize/2
-        texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE * 0.5),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE * 0.5))]
-        self.shown[position] = texture
-        if immediate:
-            self._show_block(position, texture)
-        else:
-            self._enqueue(self._show_block, position, texture)
+        try:
+            texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE))]
+            self.shown[position] = texture
+            if immediate:
+                self._show_block(position, texture)
+            else:
+                self._enqueue(self._show_block, position, texture)
+        except:
+            print("Failed to show block")
 
     def _show_block(self, position, texture):
         """ Private implementation of the `show_block()` method.
@@ -348,7 +352,10 @@ class Model(object):
         """
         # TODO check if this works
         x, y, z = position
-        vertex_data = cube_vertices(x, y, z, 0.5)
+        #x = x / 128
+        #y = y / 128
+        #z = z / 128
+        vertex_data = cube_vertices(x, y, z, 0.5) # 0.5
         texture_data = list(blocks[texture])
         # create vertex list
         # FIXME Maybe `add_indexed()` should be used instead
@@ -383,10 +390,10 @@ class Model(object):
     def get_sector(self, sector):
         
         sec = list(sector)
-        if sec[0] >= (mapSize/2): sec[0] = sec[0] % (mapSize/2)
-        if sec[2] >= (mapSize/2): sec[2] = sec[2] % (mapSize/2)
-        if sec[0] < -(mapSize/2): sec[0] = (mapSize/2) - (-sec[0] % (mapSize/2))
-        if sec[2] < -(mapSize/2): sec[2] = (mapSize/2) - (-sec[2] % (mapSize/2))
+        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
+        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -394,6 +401,18 @@ class Model(object):
         drawn to the canvas.
 
         """
+        sec = list(mapSector)
+        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
+        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        if not self.get_sector(sec):
+            for x in xrange(SECTOR_SIZE):
+                for z in xrange(SECTOR_SIZE):
+                    # create a layer stone an grass everywhere.
+                    
+                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 2, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 3, sec[2] * SECTOR_SIZE + z), STONE, immediate=False)
         for position in self.get_sector(mapSector):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
@@ -403,10 +422,7 @@ class Model(object):
             #pos[2] = int(pos[2]) + (mapSector * SECTOR_SIZE)
             p = (int(pos[0]) + ((mapSector[0]) * SECTOR_SIZE),int(pos[1]) + (mapSector[1] * SECTOR_SIZE),int(pos[2]) + (mapSector[2] * SECTOR_SIZE))
             if p not in self.shown and self.exposed(p):
-                try:
-                    self.show_block(p, False) # Map position is the position of the sector on the map
-                except:
-                    print("EXCEPTION")
+                self.show_block(p, False) # Map position is the position of the sector on the map
 
     def hide_sector(self, sector):
         """ Ensure all blocks in the given sector that should be hidden are
@@ -497,7 +513,7 @@ class Window(pyglet.window.Window):
 
         # Current (x, y, z) position in the world, specified with floats. Note
         # that, perhaps unlike in math class, the y-axis is the vertical axis.
-        self.position = (0, 0, 0)
+        self.position = (20037400/128, 0, 20037400/128)
 
         # First element is rotation of the player in the x-z plane (ground
         # plane) measured from the z-axis down. The second is the rotation
