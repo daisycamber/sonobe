@@ -323,6 +323,7 @@ class Model(object):
             Whether or not to show the block immediately.
 
         """
+<<<<<<< HEAD
         worldPosition = list(position)
         if worldPosition[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
         if worldPosition[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
@@ -330,6 +331,15 @@ class Model(object):
         worldPosition[2] = worldPosition[2] % (mapSize * SECTOR_SIZE)
         try:
             texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
+=======
+        worldPosition = position
+        #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
+        #if z < worldSize/2: z = worldSize/2
+        #if x > worldSize/2: x = -worldSize/2
+        #if z > worldSize/2: z = -worldSize/2
+        try:
+            texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE))]
+>>>>>>> parent of 5b079d4... Messed it up
             self.shown[position] = texture
             if immediate:
                 self._show_block(position, texture)
@@ -337,7 +347,6 @@ class Model(object):
                 self._enqueue(self._show_block, position, texture)
         except:
             print("Failed to show block")
-            print(position)
 
     def _show_block(self, position, texture):
         """ Private implementation of the `show_block()` method.
@@ -391,12 +400,19 @@ class Model(object):
     def get_sector(self, sector):
         
         sec = list(sector)
+<<<<<<< HEAD
         sec[0] = sec[0] % (mapSize/2)
         sec[2] = sec[2] % (mapSize/2)
         #if sec[0] >= (mapSize/2): sec[0] = sec[0] % (mapSize/2)
         #if sec[2] >= (mapSize/2): sec[2] = sec[2] % (mapSize/2)
         #if sec[0] <= -(mapSize/2): sec[0] = (mapSize/2) + (sec[0] % (mapSize/2))
         #if sec[2] <= -(mapSize/2): sec[2] = (mapSize/2) + (sec[2] % (mapSize/2))
+=======
+        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
+        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+>>>>>>> parent of 5b079d4... Messed it up
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -407,6 +423,7 @@ class Model(object):
         print("Showing")
         print(mapSector)
         sec = list(mapSector)
+<<<<<<< HEAD
         sec[0] = sec[0] % (mapSize/2)
         sec[2] = sec[2] % (mapSize/2)
         #sec[0] = sec[0] % mapSize
@@ -416,6 +433,13 @@ class Model(object):
         #if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
         print(sec)
         if not self.get_sector(tuple(sec)):
+=======
+        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
+        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        if not self.get_sector(sec):
+>>>>>>> parent of 5b079d4... Messed it up
             for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
                     # create a layer stone an grass everywhere.
