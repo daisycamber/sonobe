@@ -17,7 +17,7 @@ from pyglet.window import key, mouse
 # Size of the map
 
 # 1/128 real scale
-mapSize = 8
+mapSize = (40.075 * 1000000) / 16 / 128
 
 view_distance = 4
 
@@ -323,13 +323,13 @@ class Model(object):
             Whether or not to show the block immediately.
 
         """
-        worldPosition = list(position)
-        if worldPosition[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
-        if worldPosition[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
-        worldPosition[0] = worldPosition[0] % (mapSize * SECTOR_SIZE)
-        worldPosition[2] = worldPosition[2] % (mapSize * SECTOR_SIZE)
+        worldPosition = position
+        #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
+        #if z < worldSize/2: z = worldSize/2
+        #if x > worldSize/2: x = -worldSize/2
+        #if z > worldSize/2: z = -worldSize/2
         try:
-            texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
+            texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE))]
             self.shown[position] = texture
             if immediate:
                 self._show_block(position, texture)
@@ -390,12 +390,10 @@ class Model(object):
     def get_sector(self, sector):
         
         sec = list(sector)
-        sec[0] = sec[0] % (mapSize/2)
-        sec[2] = sec[2] % (mapSize/2)
-        #if sec[0] >= (mapSize/2): sec[0] = sec[0] % (mapSize/2)
-        #if sec[2] >= (mapSize/2): sec[2] = sec[2] % (mapSize/2)
-        #if sec[0] <= -(mapSize/2): sec[0] = (mapSize/2) + (sec[0] % (mapSize/2))
-        #if sec[2] <= -(mapSize/2): sec[2] = (mapSize/2) + (sec[2] % (mapSize/2))
+        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
+        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -403,18 +401,12 @@ class Model(object):
         drawn to the canvas.
 
         """
-        print("Showing")
-        print(mapSector)
         sec = list(mapSector)
-        sec[0] = sec[0] % (mapSize/2)
-        sec[2] = sec[2] % (mapSize/2)
-        #sec[0] = sec[0] % mapSize
-        #if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
-        #if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
-        #if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
-        #if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
-        print(sec)
-        if not self.get_sector(tuple(sec)):
+        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
+        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        if not self.get_sector(sec):
             for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
                     # create a layer stone an grass everywhere.
