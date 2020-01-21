@@ -4,6 +4,7 @@ import sys
 import math
 import random
 import time
+import noise 
 
 from collections import deque
 from pyglet import image
@@ -11,15 +12,23 @@ from pyglet.gl import *
 from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
 
+# Noise settings
+shape = (1024,1024)
+scale = 100.0
+octaves = 6
+persistence = 0.5
+lacunarity = 2.0
+
+
 # Size of the world to be rendered
 #worldSize = 3
 
 # Size of the map
 
 # 1/128 real scale
-mapSize = (40.075 * 1000000) / 16 / 128
+mapSize = 32#(40.075 * 1000000) / 16 / 128
 
-view_distance = 4
+view_distance = 2
 
 DAYLENGTH = 10000
 BASESKY = [0.5,0.69,1]
@@ -88,7 +97,7 @@ def tex_coords(top, bottom, side):
     return result
 
 
-TEXTURE_PATH = 'texture.png'
+TEXTURE_PATH = 'texture.png' # Fix this
 
 GRASS = 0 
 SAND = 1
@@ -283,8 +292,8 @@ class Model(object):
 
         """
         pos = list(position)
-        pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
-        pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
+        #pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
+        #pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
         del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
@@ -323,13 +332,15 @@ class Model(object):
             Whether or not to show the block immediately.
 
         """
-        worldPosition = position
+        worldPosition = list(position)
+        if position[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
+        if position[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
         #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
         #if z < worldSize/2: z = worldSize/2
         #if x > worldSize/2: x = -worldSize/2
         #if z > worldSize/2: z = -worldSize/2
         try:
-            texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE))]
+            texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
             self.shown[position] = texture
             if immediate:
                 self._show_block(position, texture)
@@ -337,6 +348,7 @@ class Model(object):
                 self._enqueue(self._show_block, position, texture)
         except:
             print("Failed to show block")
+            print(position)
 
     def _show_block(self, position, texture):
         """ Private implementation of the `show_block()` method.
@@ -385,15 +397,16 @@ class Model(object):
         """ Private implementation of the 'hide_block()` method.
 
         """
-        self._shown.pop(position).delete()
+        try:
+            self._shown.pop(position).delete()
+        except:
+            print("Couldn't hide block")
     # Gets the given sector
     def get_sector(self, sector):
         
         sec = list(sector)
-        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
-        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
-        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
-        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        sec[0] = sec[0] % mapSize
+        sec[2] = sec[2] % mapSize
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -402,17 +415,28 @@ class Model(object):
 
         """
         sec = list(mapSector)
-        if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
-        if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
-        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
-        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        sec[0] = sec[0] % mapSize
+        sec[2] = sec[2] % mapSize
+        
         if not self.get_sector(sec):
+            #terrainHeight = 10
             for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
+                    terrainHeight = noise.pnoise2((sec[0] * SECTOR_SIZE + x)/scale, 
+                                    (sec[2] * SECTOR_SIZE + z)/scale, 
+                                    octaves=octaves, 
+                                    persistence=persistence, 
+                                    lacunarity=lacunarity, 
+                                    repeatx=1024, 
+                                    repeaty=1024, 
+                                    base=0) * 50 + 10
+                    #print(terrainHeight)
                     # create a layer stone an grass everywhere.
+                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 1, sec[2] * SECTOR_SIZE + z), STONE, immediate=False)
                     
-                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 2, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
-                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 3, sec[2] * SECTOR_SIZE + z), STONE, immediate=False)
+                    for y in xrange(int(terrainHeight)):
+                        self.add_block((sec[0] * SECTOR_SIZE + x, y, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+                        
         for position in self.get_sector(mapSector):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
@@ -513,7 +537,7 @@ class Window(pyglet.window.Window):
 
         # Current (x, y, z) position in the world, specified with floats. Note
         # that, perhaps unlike in math class, the y-axis is the vertical axis.
-        self.position = (20037400/128, 0, 20037400/128)
+        self.position = (0, 100, 0)#(mapSize * SECTOR_SIZE * 0.5)
 
         # First element is rotation of the player in the x-z plane (ground
         # plane) measured from the z-axis down. The second is the rotation
@@ -708,8 +732,8 @@ class Window(pyglet.window.Window):
         # tall grass. If >= .5, you'll fall through the ground.
         pad = 0.25
         p = list(position)
-        p[0] = p[0] % (mapSize * SECTOR_SIZE * 0.5)
-        p[2] = p[2] % (mapSize * SECTOR_SIZE * 0.5)
+        p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
+        p[2] = p[2] % (mapSize * SECTOR_SIZE)
         np = normalize(position)
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
@@ -723,6 +747,10 @@ class Window(pyglet.window.Window):
                     op = list(np)
                     op[1] -= dy
                     op[i] += face[i]
+                    # TODO Check if this works
+                    op[0] = op[0] % (mapSize * SECTOR_SIZE)
+                    op[2] = op[2] % (mapSize * SECTOR_SIZE)
+                   # if op[0] < 0: op[0] = (mapSize * SECTOR_SIZE) - op[0]
                     if tuple(op) not in self.model.world:
                         continue
                     p[i] -= (d - pad) * face[i]
@@ -890,9 +918,14 @@ class Window(pyglet.window.Window):
         """
         self.clear()
         self.set_3d()
-        glColor3d(self.alpha, self.alpha, self.alpha)
+        #glColor3d(self.alpha, self.alpha, self.alpha)
         glClearColor(sky[0], sky[1], sky[2],1)
         self.model.batch.draw()
+        glTranslatef(self.position[0],self.position[0] + 64,self.position[2])
+        #glLightfv(GL_LIGHT0, GL_DIFFUSE, (GLfloat * 4)(self.alpha/2, self.alpha/2, self.alpha/2,0))
+        #glLightfv(GL_LIGHT0, GL_AMBIENT, (GLfloat * 4)(self.alpha/2, self.alpha/2, self.alpha/2,0))
+        #glLightfv(GL_LIGHT0, GL_SPECULAR, (GLfloat * 4)(self.alpha/2, self.alpha/2, self.alpha/2,0))
+        glLightfv(GL_LIGHT0, GL_POSITION, (GLfloat * 4)(self.alpha/2, self.alpha/2, self.alpha/2,0))
         self.draw_focused_block()
         self.set_2d()
         self.draw_label()
@@ -959,6 +992,14 @@ def setup():
     # Enable culling (not rendering) of back-facing facets -- facets that aren't
     # visible to you.
     glEnable(GL_CULL_FACE)
+    glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHT0)
+    glClearDepth(1.0)                   # Enables Clearing Of The Depth Buffer
+    glDepthFunc(GL_LESS)                # The Type Of Depth Test To Do
+    glEnable(GL_LINE_STIPPLE)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glShadeModel(GL_SMOOTH)             # Enables Smooth Color Shading
     # Set the texture minification/magnification function to GL_NEAREST (nearest
     # in Manhattan distance) to the specified texture coordinates. GL_NEAREST
     # "is generally faster than GL_LINEAR, but it can produce textured images
