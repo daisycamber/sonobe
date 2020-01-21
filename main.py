@@ -283,9 +283,9 @@ class Model(object):
 
         """
         pos = list(position)
-        pos[0] = int(pos[0] % (mapSize * SECTOR_SIZE)) # 
-        pos[2] = int(pos[2] % (mapSize * SECTOR_SIZE))
-        self.world[tuple(pos)] = 0
+        pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
+        pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
+        del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
             if position in self.shown:
@@ -323,17 +323,13 @@ class Model(object):
             Whether or not to show the block immediately.
 
         """
-        worldPosition = list(position)
+        worldPosition = position
         #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
         #if z < worldSize/2: z = worldSize/2
         #if x > worldSize/2: x = -worldSize/2
         #if z > worldSize/2: z = -worldSize/2
-        #if worldPosition[0] > (mapSize): worldPosition[0] = worldPosition[0] % (mapSize)
-        #if worldPosition[2] > (mapSize): worldPosition[2] = worldPosition[2] % (mapSize)
-        #if worldPosition[0] < 0: worldPosition[0] = (mapSize) - worldPosition[0]
-        #if worldPosition[2] < 0: worldPosition[2] = (mapSize) - worldPosition[2]
         try:
-            texture = self.world[position]
+            texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE))]
             self.shown[position] = texture
             if immediate:
                 self._show_block(position, texture)
@@ -341,7 +337,6 @@ class Model(object):
                 self._enqueue(self._show_block, position, texture)
         except:
             print("Failed to show block")
-            print(position)
 
     def _show_block(self, position, texture):
         """ Private implementation of the `show_block()` method.
@@ -357,6 +352,9 @@ class Model(object):
         """
         # TODO check if this works
         x, y, z = position
+        #x = x / 128
+        #y = y / 128
+        #z = z / 128
         vertex_data = cube_vertices(x, y, z, 0.5) # 0.5
         texture_data = list(blocks[texture])
         # create vertex list
@@ -394,8 +392,8 @@ class Model(object):
         sec = list(sector)
         if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
         if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
-        if sec[0] < -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
-        if sec[2] < -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -406,8 +404,8 @@ class Model(object):
         sec = list(mapSector)
         if sec[0] >= (mapSize): sec[0] = sec[0] % (mapSize)
         if sec[2] >= (mapSize): sec[2] = sec[2] % (mapSize)
-        if sec[0] < -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
-        if sec[2] < -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
+        if sec[0] <= -(mapSize): sec[0] = (mapSize) - (-sec[0] % (mapSize))
+        if sec[2] <= -(mapSize): sec[2] = (mapSize) - (-sec[2] % (mapSize))
         if not self.get_sector(sec):
             for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
@@ -515,7 +513,7 @@ class Window(pyglet.window.Window):
 
         # Current (x, y, z) position in the world, specified with floats. Note
         # that, perhaps unlike in math class, the y-axis is the vertical axis.
-        self.position = (0, 0, 0) # 20037400/128
+        self.position = (20037400/128, 0, 20037400/128)
 
         # First element is rotation of the player in the x-z plane (ground
         # plane) measured from the z-axis down. The second is the rotation
