@@ -323,14 +323,16 @@ class Model(object):
             Whether or not to show the block immediately.
 
         """
-        worldPosition = position
+        worldPosition = list(position)
+        #if worldPosition[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
+        #if worldPosition[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
         #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
         #if z < worldSize/2: z = worldSize/2
         #if x > worldSize/2: x = -worldSize/2
         #if z > worldSize/2: z = -worldSize/2
         try:
-            texture = self.world[(int(position[0]) % (mapSize * SECTOR_SIZE),int(position[1]),int(position[2]) % (mapSize * SECTOR_SIZE))]
-            self.shown[position] = texture
+            texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
+            self.shown[worldPosition] = texture
             if immediate:
                 self._show_block(position, texture)
             else:
