@@ -234,19 +234,8 @@ class Model(object):
             How many blocks away to search for a hit.
 
         """
-        #print(position)
         m = 8
         x, y, z = position
-        if x < -mapSize * SECTOR_SIZE: x = x % (mapSize * SECTOR_SIZE)
-        if z < -mapSize * SECTOR_SIZE: z = z % (mapSize * SECTOR_SIZE)
-        if x > mapSize * SECTOR_SIZE: x = x % (mapSize * SECTOR_SIZE)
-        if z > mapSize * SECTOR_SIZE: z = z % (mapSize * SECTOR_SIZE)
-        if x < 0: x = mapSize * SECTOR_SIZE + x
-        if z < 0: z = mapSize * SECTOR_SIZE + z
-        
-
-        #x = x % (mapSize * SECTOR_SIZE * 0.5) + 
-        # Map this position so it corresponds with self.world (0-(mapSize * SECTOR_SIZE))
         dx, dy, dz = vector
         previous = None
         for _ in xrange(max_distance * m):
@@ -303,18 +292,9 @@ class Model(object):
 
         """
         pos = list(position)
-        print("Removing block")
-        print(pos)
-        #if pos[0] < -mapSize * SECTOR_SIZE: pos[0] = pos[0] % (mapSize * SECTOR_SIZE)
-        #if pos[2] < -mapSize * SECTOR_SIZE: pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
-        #if pos[0] > mapSize * SECTOR_SIZE: pos[0] = pos[0] % (mapSize * SECTOR_SIZE)
-        #if pos[2] > mapSize * SECTOR_SIZE: pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
-        #if pos[0] < 0: pos[0] = mapSize * SECTOR_SIZE + pos[0]
-        #if pos[2] < 0: pos[2] = mapSize * SECTOR_SIZE + pos[2]
-        #print(pos)
         #pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
         #pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
-        del self.world[position]
+        del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
             if position in self.shown:
@@ -353,19 +333,14 @@ class Model(object):
 
         """
         worldPosition = list(position)
-        #worldPosition[0] = worldPosition[0] % (mapSize * SECTOR_SIZE)
-        #worldPosition[2] = worldPosition[2] % (mapSize * SECTOR_SIZE)
-        #if worldPosition[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
-        #if worldPosition[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
+        if position[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
+        if position[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
         #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
         #if z < worldSize/2: z = worldSize/2
         #if x > worldSize/2: x = -worldSize/2
         #if z > worldSize/2: z = -worldSize/2
         try:
-            texture = self.world[position] # [(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
-        except:
-            print("This")
-        try:
+            texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
             self.shown[position] = texture
             if immediate:
                 self._show_block(position, texture)
@@ -426,13 +401,12 @@ class Model(object):
             self._shown.pop(position).delete()
         except:
             print("Couldn't hide block")
-            print(position)
     # Gets the given sector
     def get_sector(self, sector):
         
         sec = list(sector)
-        #sec[0] = sec[0] % (mapSize)
-        #sec[2] = sec[2] % (mapSize)
+        sec[0] = sec[0] % mapSize
+        sec[2] = sec[2] % mapSize
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -463,7 +437,7 @@ class Model(object):
                     for y in xrange(int(terrainHeight)):
                         self.add_block((sec[0] * SECTOR_SIZE + x, y, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
                         
-        for position in self.get_sector(sec):#self.sectors.get(sector, []):
+        for position in self.get_sector(mapSector):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
             pos[2] = pos[2] % SECTOR_SIZE
@@ -758,8 +732,8 @@ class Window(pyglet.window.Window):
         # tall grass. If >= .5, you'll fall through the ground.
         pad = 0.25
         p = list(position)
-        #p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
-        #p[2] = p[2] % (mapSize * SECTOR_SIZE)
+        p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
+        p[2] = p[2] % (mapSize * SECTOR_SIZE)
         np = normalize(position)
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
