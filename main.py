@@ -294,6 +294,7 @@ class Model(object):
         pos = list(position)
         #pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
         #pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
+        print("Removed block")
         del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
@@ -405,8 +406,6 @@ class Model(object):
     def get_sector(self, sector):
         
         sec = list(sector)
-        sec[0] = sec[0] % mapSize
-        sec[2] = sec[2] % mapSize
         return self.sectors.get(tuple(sec), [])
 
     def show_sector(self, mapSector):
@@ -418,7 +417,7 @@ class Model(object):
         sec[0] = sec[0] % mapSize
         sec[2] = sec[2] % mapSize
         
-        if not self.get_sector(sec):
+        if not self.sectors.get(tuple(sec), []):
             #terrainHeight = 10
             for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
@@ -437,7 +436,7 @@ class Model(object):
                     for y in xrange(int(terrainHeight)):
                         self.add_block((sec[0] * SECTOR_SIZE + x, y, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
                         
-        for position in self.get_sector(mapSector):#self.sectors.get(sector, []):
+        for position in self.get_sector(tuple(sec)):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
             pos[2] = pos[2] % SECTOR_SIZE
@@ -732,8 +731,8 @@ class Window(pyglet.window.Window):
         # tall grass. If >= .5, you'll fall through the ground.
         pad = 0.25
         p = list(position)
-        p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
-        p[2] = p[2] % (mapSize * SECTOR_SIZE)
+        #p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
+        #p[2] = p[2] % (mapSize * SECTOR_SIZE)
         np = normalize(position)
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
