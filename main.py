@@ -26,7 +26,7 @@ lacunarity = 2.0
 # Size of the map
 
 # 1/128 real scale
-mapSize = 32#(40.075 * 1000000) / 16 / 128
+mapSize = 8#(40.075 * 1000000) / 16 / 128
 
 view_distance = 2
 
@@ -142,8 +142,8 @@ def normalize(position):
 def sectorizeWorld(position):
     x, y, z = normalize(position)
     x, y, z = x // SECTOR_SIZE, y // SECTOR_SIZE, z // SECTOR_SIZE
-    x = x % (mapSize)
-    y = y % (mapSize)
+    x = x % (mapSize/2)
+    y = y % (mapSize/2)
     return (x, 0, z)
 
 def sectorize(position):
@@ -236,6 +236,8 @@ class Model(object):
         """
         m = 8
         x, y, z = position
+        x = x % (mapSize * SECTOR_SIZE)
+        z = z % (mapSize * SECTOR_SIZE)
         dx, dy, dz = vector
         previous = None
         for _ in xrange(max_distance * m):
@@ -244,6 +246,8 @@ class Model(object):
                 return key, previous
             previous = key
             x, y, z = x + dx / m, y + dy / m, z + dz / m
+            x = x % (mapSize * SECTOR_SIZE)
+            z = z % (mapSize * SECTOR_SIZE)
         return None, None
 
     def exposed(self, position):
@@ -292,6 +296,7 @@ class Model(object):
 
         """
         pos = list(position)
+        print(pos)
         #pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
         #pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
         del self.world[tuple(pos)]
@@ -333,14 +338,8 @@ class Model(object):
 
         """
         worldPosition = list(position)
-        if position[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
-        if position[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
-        #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
-        #if z < worldSize/2: z = worldSize/2
-        #if x > worldSize/2: x = -worldSize/2
-        #if z > worldSize/2: z = -worldSize/2
         try:
-            texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
+            texture = self.world(position) #self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
             self.shown[position] = texture
             if immediate:
                 self._show_block(position, texture)
@@ -415,8 +414,8 @@ class Model(object):
 
         """
         sec = list(mapSector)
-        sec[0] = sec[0] % mapSize
-        sec[2] = sec[2] % mapSize
+        #sec[0] = sec[0] % (mapSize/2)
+        #sec[2] = sec[2] % (mapSize/2)
         
         if not self.get_sector(sec):
             #terrainHeight = 10
@@ -439,6 +438,7 @@ class Model(object):
                         
         for position in self.get_sector(mapSector):#self.sectors.get(sector, []):
             pos = list(position)
+            # Position within the sector
             pos[0] = pos[0] % SECTOR_SIZE
             pos[2] = pos[2] % SECTOR_SIZE
             #int(pos[0]) + (mapSector * SECTOR_SIZE)
@@ -732,8 +732,8 @@ class Window(pyglet.window.Window):
         # tall grass. If >= .5, you'll fall through the ground.
         pad = 0.25
         p = list(position)
-        p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
-        p[2] = p[2] % (mapSize * SECTOR_SIZE)
+        #p[0] = p[0] % (mapSize * SECTOR_SIZE) # * 0.5
+        #p[2] = p[2] % (mapSize * SECTOR_SIZE)
         np = normalize(position)
         for face in FACES:  # check all surrounding blocks
             for i in xrange(3):  # check each dimension independently
