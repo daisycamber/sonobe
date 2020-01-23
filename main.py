@@ -160,10 +160,6 @@ def sectorize(position):
     """
     x, y, z = normalize(position)
     x, y, z = x // SECTOR_SIZE, y // SECTOR_SIZE, z // SECTOR_SIZE
-    #if x < -worldSize/2: x = x % (worldSize/2)
-    #if z < -worldSize/2: z = z % (worldSize/2)
-    #if x > worldSize/2: x = x % (worldSize/2)
-    #if z > worldSize/2: z = z % (worldSize/2)
     return (x, 0, z)
 
 
@@ -198,27 +194,8 @@ class Model(object):
 
         self._initialize()
 
-    #def update_sectors(self):
-
-
     def _initialize(self):
-        """ Initialize the world by placing all the blocks.
-
-        """
-        #update_sectors(self):
-        #n = int((initialSectors*SECTOR_SIZE))  # 1/2 width and height of world map TODO fix /2
-        #s = 1  # step size
-        #y = 0  # initial y height
-        #for x in xrange(-n, n + 1, s):
-        #    for z in xrange(-n, n + 1, s):
-                # create a layer stone an grass everywhere.
-        #        self.add_block((x, y - 2, z), GRASS, immediate=False)
-        #        self.add_block((x, y - 3, z), STONE, immediate=False)
-                #if x in (-n, n) or z in (-n, n):
-                    # create outer walls.
-                #    for dy in xrange(-2, 3):
-                #        self.add_block((x, y + dy, z), STONE, immediate=False)
-
+        print("Starting Voxel Engine")
     def hit_test(self, position, vector, max_distance=8):
         """ Line of sight search from current position. If a block is
         intersected it is returned, along with the block previously in the line
@@ -236,6 +213,12 @@ class Model(object):
         """
         m = 8
         x, y, z = position
+        if x < -mapSize * SECTOR_SIZE: x = x % (mapSize * SECTOR_SIZE)
+        if z < -mapSize * SECTOR_SIZE: z = z % (mapSize * SECTOR_SIZE)
+        if x > mapSize * SECTOR_SIZE: x = x % (mapSize * SECTOR_SIZE)
+        if z > mapSize * SECTOR_SIZE: z = z % (mapSize * SECTOR_SIZE)
+        if x < 0: x = mapSize * SECTOR_SIZE + x
+        if z < 0: z = mapSize * SECTOR_SIZE + z
         dx, dy, dz = vector
         previous = None
         for _ in xrange(max_distance * m):
@@ -292,9 +275,8 @@ class Model(object):
 
         """
         pos = list(position)
-        #pos[0] = pos[0] % (mapSize * SECTOR_SIZE) # 
-        #pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
         print("Removed block")
+        print(pos)
         del self.world[tuple(pos)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
@@ -334,15 +316,13 @@ class Model(object):
 
         """
         worldPosition = list(position)
-        if position[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
-        if position[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
-        #if position[0] < (-worldSize * SECTOR_SIZE)/2: x = worldSize/2
-        #if z < worldSize/2: z = worldSize/2
-        #if x > worldSize/2: x = -worldSize/2
-        #if z > worldSize/2: z = -worldSize/2
+        worldPosition[0] = worldPosition[0] % (mapSize * SECTOR_SIZE)
+        worldPosition[2] = worldPosition[2] % (mapSize * SECTOR_SIZE)
+        if worldPosition[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
+        if worldPosition[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2]
         try:
-            texture = self.world[(int(worldPosition[0]) % (mapSize * SECTOR_SIZE),int(worldPosition[1]),int(worldPosition[2]) % (mapSize * SECTOR_SIZE))]
-            self.shown[position] = texture
+            texture = self.world[tuple(worldPosition)]
+            self.shown[tuple(worldPosition)] = texture
             if immediate:
                 self._show_block(position, texture)
             else:
@@ -363,16 +343,17 @@ class Model(object):
             generate.
         <1*24#
         """
-        # TODO check if this works
+        # TODO FIX THIS HERE ok so position must be within bounds of the world.
         x, y, z = position
-        #x = x / 128
-        #y = y / 128
-        #z = z / 128
+
+        pos = list(position)
+        pos[0] = pos[0] % (mapSize * SECTOR_SIZE)
+        pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
         vertex_data = cube_vertices(x, y, z, 0.5) # 0.5
         texture_data = list(blocks[texture])
         # create vertex list
         # FIXME Maybe `add_indexed()` should be used instead
-        self._shown[position] = self.batch.add(24, GL_QUADS, self.group,
+        self._shown[tuple(pos)] = self.batch.add(24, GL_QUADS, self.group,
             ('v3f/static', vertex_data),
             ('t2f/static', texture_data)) 
 
@@ -402,6 +383,7 @@ class Model(object):
             self._shown.pop(position).delete()
         except:
             print("Couldn't hide block")
+            print(position)
     # Gets the given sector
     def get_sector(self, sector):
         
@@ -428,7 +410,7 @@ class Model(object):
                                     lacunarity=lacunarity, 
                                     repeatx=1024, 
                                     repeaty=1024, 
-                                    base=0) * 50 + 10
+                                    base=0) * 20 + 10
                     #print(terrainHeight)
                     # create a layer stone an grass everywhere.
                     self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 1, sec[2] * SECTOR_SIZE + z), STONE, immediate=False)
@@ -440,9 +422,6 @@ class Model(object):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
             pos[2] = pos[2] % SECTOR_SIZE
-            #int(pos[0]) + (mapSector * SECTOR_SIZE)
-            #pos[1] = int(pos[2]) + (mapSector * SECTOR_SIZE)
-            #pos[2] = int(pos[2]) + (mapSector * SECTOR_SIZE)
             p = (int(pos[0]) + ((mapSector[0]) * SECTOR_SIZE),int(pos[1]) + (mapSector[1] * SECTOR_SIZE),int(pos[2]) + (mapSector[2] * SECTOR_SIZE))
             if p not in self.shown and self.exposed(p):
                 self.show_block(p, False) # Map position is the position of the sector on the map
@@ -497,12 +476,6 @@ class Model(object):
         func(*args)
 
     def process_queue(self):
-        """ Process the entire queue while taking periodic breaks. This allows
-        the game loop to run smoothly. The queue contains calls to
-        _show_block() and _hide_block() so this method should be called if
-        add_block() or remove_block() was called with immediate=False
-
-        """
         start = time.perf_counter()
         while self.queue and time.perf_counter() - start < 1.0 / TICKS_PER_SEC:
             self._dequeue()
@@ -525,25 +498,8 @@ class Window(pyglet.window.Window):
 
         # When flying gravity has no effect and speed is increased.
         self.flying = False
-
-        # Strafing is moving lateral to the direction you are facing,
-        # e.g. moving to the left or right while continuing to face forward.
-        #
-        # First element is -1 when moving forward, 1 when moving back, and 0
-        # otherwise. The second element is -1 when moving left, 1 when moving
-        # right, and 0 otherwise.
         self.strafe = [0, 0]
-
-        # Current (x, y, z) position in the world, specified with floats. Note
-        # that, perhaps unlike in math class, the y-axis is the vertical axis.
         self.position = (0, 100, 0)#(mapSize * SECTOR_SIZE * 0.5)
-
-        # First element is rotation of the player in the x-z plane (ground
-        # plane) measured from the z-axis down. The second is the rotation
-        # angle from the ground plane up. Rotation is in degrees.
-        #
-        # The vertical plane rotation ranges from -90 (looking straight down) to
-        # 90 (looking straight up). The horizontal rotation range is unbounded.
         self.rotation = (0, 0)
 
         # Which sector the player is currently in.
@@ -666,6 +622,8 @@ class Window(pyglet.window.Window):
             sky[2] = BASESKY[2] * ((DAYLENGTH/2) - (self.model.dayTime-(DAYLENGTH/2)))/(DAYLENGTH/2)
             self.alpha = baseAlpha * ((DAYLENGTH/2) - (self.model.dayTime-(DAYLENGTH/2)))/(DAYLENGTH/2)
 
+        glFogfv(GL_FOG_COLOR, (GLfloat * 4)(0.5 * self.alpha, 0.69 * self.alpha, 1.0 * self.alpha, 1))
+
 
         self.model.process_queue()
         sector = sectorize(self.position)
@@ -784,7 +742,11 @@ class Window(pyglet.window.Window):
                     ((button == mouse.LEFT) and (modifiers & key.MOD_CTRL)):
                 # ON OSX, control + left click = right click.
                 if previous:
+                    print("Placing")
+                    print(previous)
                     self.model.add_block(previous, self.block)
+                    #(int(pos[0]) + ((mapSector[0]) * SECTOR_SIZE),int(pos[1]) + (mapSector[1] * SECTOR_SIZE),int(pos[2]) + (mapSector[2] * SECTOR_SIZE))
+                    self.model.show_block(previous)
             elif button == pyglet.window.mouse.LEFT and block:
                 texture = self.model.world[block]
                 if texture != STONE:
@@ -969,17 +931,17 @@ def setup_fog():
     """
     # Enable fog. Fog "blends a fog color with each rasterized pixel fragment's
     # post-texturing color."
-    #glEnable(GL_FOG)
+    glEnable(GL_FOG)
     # Set the fog color.
-    #glFogfv(GL_FOG_COLOR, (GLfloat * 4)(0.5, 0.69, 1.0, 1))
+    glFogfv(GL_FOG_COLOR, (GLfloat * 4)(0.5, 0.69, 1.0, 1))
     # Say we have no preference between rendering speed and quality.
-    #glHint(GL_FOG_HINT, GL_DONT_CARE)
+    glHint(GL_FOG_HINT, GL_DONT_CARE)
     # Specify the equation used to compute the blending factor.
-    #glFogi(GL_FOG_MODE, GL_LINEAR)
+    glFogi(GL_FOG_MODE, GL_LINEAR)
     # How close and far away fog starts and ends. The closer the start and end,
     # the denser the fog in the fog range.
-    #glFogf(GL_FOG_START, 20.0)
-    #glFogf(GL_FOG_END, 60.0)
+    glFogf(GL_FOG_START, 20.0)
+    glFogf(GL_FOG_END, 60.0)
 
 
 def setup():
@@ -999,11 +961,6 @@ def setup():
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glShadeModel(GL_SMOOTH)             # Enables Smooth Color Shading
-    # Set the texture minification/magnification function to GL_NEAREST (nearest
-    # in Manhattan distance) to the specified texture coordinates. GL_NEAREST
-    # "is generally faster than GL_LINEAR, but it can produce textured images
-    # with sharper edges because the transition between texture elements is not
-    # as smooth."
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
     setup_fog()
