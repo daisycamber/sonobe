@@ -230,9 +230,9 @@ class Model(object):
         immediate : bool
             Whether or not to draw the block immediately.
         """
-        if get_world_pos(position) in self.world:
+        if position in self.world:
             self.remove_block(position, immediate)
-        self.world[get_world_pos(position)] = texture
+        self.world[position] = texture
         self.sectors.setdefault(sectorize(position), []).append(position)
         if immediate:
             if self.exposed(position):
@@ -248,7 +248,7 @@ class Model(object):
         immediate : bool
             Whether or not to immediately remove block from canvas.
         """
-        del self.world[get_world_pos(position)]
+        del self.world[position]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
             if position in self.shown:
@@ -283,7 +283,7 @@ class Model(object):
         immediate : bool
             Whether or not to show the block immediately.
         """
-        texture = self.world[get_world_pos(position)]
+        texture = self.world[position]
         self.shown[position] = texture
         if immediate:
             self._show_block(position, texture)
