@@ -792,6 +792,8 @@ class Window(pyglet.window.Window):
         """ Configure OpenGL to draw in 3d.
         """
         width, height = self.get_size()
+        glEnable( GL_BLEND )
+        glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA )
         glEnable(GL_DEPTH_TEST)
         viewport = self.get_viewport_size()
         glViewport(0, 0, max(1, viewport[0]), max(1, viewport[1]))
