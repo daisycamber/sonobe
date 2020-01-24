@@ -277,7 +277,7 @@ class Model(object):
         pos = list(position)
         print("Removed block")
         print(pos)
-        del self.world[tuple(pos)]
+        del self.world[get_world_pos(tuple(pos))]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
             if position in self.shown:

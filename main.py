@@ -14,17 +14,18 @@ from pyglet.window import key, mouse
 
 
 
-
 TICKS_PER_SEC = 60
 
 # Size of sectors used to ease block loading.
 SECTOR_SIZE = 16
 
+
+
 WALKING_SPEED = 5
 FLYING_SPEED = 15
 
 GRAVITY = 20.0
-MAX_JUMP_HEIGHT = 1.0 # About the height of a block.
+MAX_JUMP_HEIGHT = 1.2 # About the height of a block.
 # To derive the formula for calculating jump speed, first solve
 #    v_t = v_0 + a * t
 # for the time at which you achieve maximum height, where a is the acceleration
@@ -41,7 +42,10 @@ PLAYER_HEIGHT = 2
 view_distance = 4
 
 # Size of the map
-mapSize = 6
+mapSize = 100
+
+# OpenGL has limits. This is the max sector we can travel to before we are teleported back to the min sector (sector 1)
+maxSector = mapSize * 50
 
 # Noise settings
 shape = (1024,1024)
@@ -57,8 +61,8 @@ def get_world_pos(position):
     pos = list(position)
     pos[0] = pos[0] % (mapSize * SECTOR_SIZE)
     pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
-    if pos[0] < 0: pos[0] = (mapSize * SECTOR_SIZE) - pos[0]
-    if pos[2] < 0: pos[2] = (mapSize * SECTOR_SIZE) - pos[2]
+    if pos[0] < 0: pos[0] = (mapSize * SECTOR_SIZE) + pos[0]
+    if pos[2] < 0: pos[2] = (mapSize * SECTOR_SIZE) + pos[2]
     return tuple(pos)
 
 def cube_vertices(x, y, z, n):
@@ -202,7 +206,7 @@ class Model(object):
         previous = None
         for _ in xrange(max_distance * m):
             key = normalize((x, y, z))
-            if key != previous and key in self.world:
+            if key != previous and get_world_pos(key) in self.world:
                 return key, previous
             previous = key
             x, y, z = x + dx / m, y + dy / m, z + dz / m
@@ -213,8 +217,9 @@ class Model(object):
         blocks, True otherwise.
         """
         x, y, z = position
+        
         for dx, dy, dz in FACES:
-            if (x + dx, y + dy, z + dz) not in self.world:
+            if get_world_pos((x + dx, y + dy, z + dz)) not in self.world:
                 return True
         return False
 
@@ -248,11 +253,12 @@ class Model(object):
         immediate : bool
             Whether or not to immediately remove block from canvas.
         """
-        del self.world[position]
-        self.sectors[sectorize(position)].remove(position)
+        world_pos = get_world_pos(position)
+        del self.world[world_pos]
+        self.sectors[sectorize(world_pos)].remove(world_pos)
         if immediate:
-            if position in self.shown:
-                self.hide_block(position)
+            if world_pos in self.shown:
+                self.hide_block(position) # TODO fix to world_pos when neccesary
             self.check_neighbors(position)
 
     def check_neighbors(self, position):
@@ -264,13 +270,13 @@ class Model(object):
         x, y, z = position
         for dx, dy, dz in FACES:
             key = (x + dx, y + dy, z + dz)
-            if key not in self.world:
+            if get_world_pos(key) not in self.world:
                 continue
-            if self.exposed(key):
-                if key not in self.shown:
+            if self.exposed(get_world_pos(key)):
+                if get_world_pos(key) not in self.shown:
                     self.show_block(key)
             else:
-                if key in self.shown:
+                if get_world_pos(key) in self.shown:
                     self.hide_block(key)
 
     def show_block(self, position, immediate=True):
@@ -283,8 +289,13 @@ class Model(object):
         immediate : bool
             Whether or not to show the block immediately.
         """
-        texture = self.world[position]
-        self.shown[position] = texture
+        world_pos = get_world_pos(position)
+        #worldPosition[0] = worldPosition[0] % (mapSize * SECTOR_SIZE)
+        #worldPosition[2] = worldPosition[2] % (mapSize * SECTOR_SIZE)
+        #if worldPosition[0] < 0: worldPosition[0] = (mapSize * SECTOR_SIZE) + worldPosition[0]
+        #if worldPosition[2] < 0: worldPosition[2] = (mapSize * SECTOR_SIZE) + worldPosition[2] 
+        texture = self.world[world_pos]
+        self.shown[world_pos] = texture # tuple(worldPosition)
         if immediate:
             self._show_block(position, texture)
         else:
@@ -305,7 +316,7 @@ class Model(object):
         texture_data = list(blocks[texture])
         # create vertex list
         # FIXME Maybe `add_indexed()` should be used instead
-        self._shown[position] = self.batch.add(24, GL_QUADS, self.group,
+        self._shown[get_world_pos(position)] = self.batch.add(24, GL_QUADS, self.group,
             ('v3f/static', vertex_data),
             ('t2f/static', texture_data))
 
@@ -319,14 +330,14 @@ class Model(object):
         immediate : bool
             Whether or not to immediately remove the block from the canvas.
         """
-        pos = list(position)
+        world_pos = get_world_pos(position)
         #pos[0] = pos[0] % (mapSize * SECTOR_SIZE * 0.5)
         #pos[2] = pos[2] % (mapSize * SECTOR_SIZE * 0.5)
-        self.shown.pop(tuple(pos))
+        self.shown.pop(world_pos)
         if immediate:
-            self._hide_block(position)
+            self._hide_block(world_pos)
         else:
-            self._enqueue(self._hide_block, position)
+            self._enqueue(self._hide_block, world_pos)
 
     def _hide_block(self, position):
         """ Private implementation of the 'hide_block()` method.
@@ -337,9 +348,10 @@ class Model(object):
         """ Ensure all blocks in the given sector that should be shown are
         drawn to the canvas.
         """
-        print("Showing sector")
-        print(sector)
-        if not self.sectors.get(sector, []):
+        sec = list(sector)
+        sec[0] = sec[0] % mapSize
+        sec[2] = sec[2] % mapSize
+        if not self.sectors.get(tuple(sec), []):
             #terrainHeight = 10
             for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
@@ -351,16 +363,22 @@ class Model(object):
                                     repeatx=1024, 
                                     repeaty=1024, 
                                     base=0) * 20 + 10
-                    #print(terrainHeight)
                     # create a layer stone an grass everywhere.
-                    self.add_block((sector[0] * SECTOR_SIZE + x, 0 - 1, sector[2] * SECTOR_SIZE + z), STONE, immediate=False)
+                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 1, sec[2] * SECTOR_SIZE + z), STONE, immediate=False)
                     
                     for y in xrange(int(terrainHeight)):
-                        self.add_block((sector[0] * SECTOR_SIZE + x, y, sector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+                        self.add_block((sec[0] * SECTOR_SIZE + x, y, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
 
-        for position in self.sectors.get(sector, []):
-            if position not in self.shown and self.exposed(position):
-                self.show_block(position, False)
+        for position in self.sectors.get(tuple(sec), []):#self.sectors.get(sector, []):
+            pos = list(position)
+            pos[0] = pos[0] % SECTOR_SIZE
+            pos[2] = pos[2] % SECTOR_SIZE
+            p = (int(pos[0]) + ((sector[0]) * SECTOR_SIZE),int(pos[1]),int(pos[2]) + (sector[2] * SECTOR_SIZE))
+            if p not in self.shown and self.exposed(p):
+                self.show_block(p, immediate=False) # Map position is the position of the sector on the map
+        #for position in self.sectors.get(sector, []):
+        #    if position not in self.shown and self.exposed(position):
+        #        self.show_block(position, False)
 
     def hide_sector(self, sector):
         """ Ensure all blocks in the given sector that should be hidden are
@@ -445,7 +463,7 @@ class Window(pyglet.window.Window):
 
         # Current (x, y, z) position in the world, specified with floats. Note
         # that, perhaps unlike in math class, the y-axis is the vertical axis.
-        self.position = (0, 100, 0)
+        self.position = (maxSector * SECTOR_SIZE * 0.5, 100, maxSector * SECTOR_SIZE * 0.5)
 
         # First element is rotation of the player in the x-z plane (ground
         # plane) measured from the z-axis down. The second is the rotation
@@ -591,6 +609,16 @@ class Window(pyglet.window.Window):
             dy += self.dy * dt
         # collisions
         x, y, z = self.position
+        # Make sure player is on workable section of world
+        if x < mapSize * SECTOR_SIZE:
+            x = maxSector * SECTOR_SIZE * 0.5
+        if z < mapSize * SECTOR_SIZE:
+            z = maxSector * SECTOR_SIZE * 0.5
+        if x > maxSector * SECTOR_SIZE:
+            x =  maxSector * SECTOR_SIZE * 0.5
+        if z > maxSector * SECTOR_SIZE:
+            z =  maxSector * SECTOR_SIZE * 0.5
+
         x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
         self.position = (x, y, z)
 
@@ -627,7 +655,7 @@ class Window(pyglet.window.Window):
                     op = list(np)
                     op[1] -= dy
                     op[i] += face[i]
-                    if tuple(op) not in self.model.world:
+                    if get_world_pos(tuple(op)) not in self.model.world:
                         continue
                     p[i] -= (d - pad) * face[i]
                     if face == (0, -1, 0) or face == (0, 1, 0):
@@ -659,9 +687,10 @@ class Window(pyglet.window.Window):
                     ((button == mouse.LEFT) and (modifiers & key.MOD_CTRL)):
                 # ON OSX, control + left click = right click.
                 if previous:
-                    self.model.add_block(previous, self.block)
+                    self.model.add_block(get_world_pos(previous), self.block)
+                    self.model.show_block(previous)
             elif button == pyglet.window.mouse.LEFT and block:
-                texture = self.model.world[block]
+                texture = self.model.world[get_world_pos(block)]
                 if texture != STONE:
                     self.model.remove_block(block)
         else:
