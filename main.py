@@ -53,6 +53,14 @@ lacunarity = 2.0
 if sys.version_info[0] >= 3:
     xrange = range
 
+def get_world_pos(position):
+    pos = list(position)
+    pos[0] = pos[0] % (mapSize * SECTOR_SIZE)
+    pos[2] = pos[2] % (mapSize * SECTOR_SIZE)
+    if pos[0] < 0: pos[0] = (mapSize * SECTOR_SIZE) - pos[0]
+    if pos[2] < 0: pos[2] = (mapSize * SECTOR_SIZE) - pos[2]
+    return tuple(pos)
+
 def cube_vertices(x, y, z, n):
     """ Return the vertices of the cube at position x, y, z with size 2*n.
     """
@@ -222,9 +230,9 @@ class Model(object):
         immediate : bool
             Whether or not to draw the block immediately.
         """
-        if position in self.world:
+        if get_world_pos(position) in self.world:
             self.remove_block(position, immediate)
-        self.world[position] = texture
+        self.world[get_world_pos(position)] = texture
         self.sectors.setdefault(sectorize(position), []).append(position)
         if immediate:
             if self.exposed(position):
@@ -240,7 +248,7 @@ class Model(object):
         immediate : bool
             Whether or not to immediately remove block from canvas.
         """
-        del self.world[position]
+        del self.world[get_world_pos(position)]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
             if position in self.shown:
@@ -275,7 +283,7 @@ class Model(object):
         immediate : bool
             Whether or not to show the block immediately.
         """
-        texture = self.world[position]
+        texture = self.world[get_world_pos(position)]
         self.shown[position] = texture
         if immediate:
             self._show_block(position, texture)
