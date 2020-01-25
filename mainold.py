@@ -73,7 +73,7 @@ def cube_vertices(x, y, z, n):
     ]
 
 
-def tex_coord(x, y, n=4):
+def tex_coord(x, y, n=3):
     """ Return the bounding vertices of the texture square.
 
     """
@@ -105,7 +105,7 @@ BRICK = 2
 STONE = 3
 
 blocks = [
-    tex_coords((1, 0), (0, 1), (0, 0)),
+    tex_coords((1, 0), (1, 0), (1, 0)),
     tex_coords((1, 1), (1, 1), (1, 1)),
     tex_coords((2, 0), (2, 0), (2, 0)),
     tex_coords((2, 1), (2, 1), (2, 1))

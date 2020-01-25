@@ -42,10 +42,10 @@ PLAYER_HEIGHT = 2
 view_distance = 4
 
 # Size of the map
-mapSize = 100
+mapSize = 16
 
 # OpenGL has limits. This is the max sector we can travel to before we are teleported back to the min sector (sector 1)
-maxSector = mapSize * 50
+maxSector = mapSize * 5
 
 # Noise settings
 shape = (1024,1024)
@@ -78,7 +78,7 @@ def cube_vertices(x, y, z, n):
     ]
 
 
-def tex_coord(x, y, n=4):
+def tex_coord(x, y, n=4): # N is number of textures - 1
     """ Return the bounding vertices of the texture square.
     """
     m = 1.0 / n
@@ -105,13 +105,19 @@ TEXTURE_PATH = 'texture.png'
 GRASS = 0 
 SAND = 1
 BRICK = 2 
-STONE = 3
+BEDROCK = 3
+STONE = 4
+WOOD = 5
+LEAVES = 6
 
 blocks = [
-    tex_coords((1, 0), (0, 1), (0, 0)),
-    tex_coords((1, 1), (1, 1), (1, 1)),
+    tex_coords((2, 2), (2, 2), (2, 2)),
+    tex_coords((3, 0), (3, 0), (3, 0)),
     tex_coords((2, 0), (2, 0), (2, 0)),
-    tex_coords((2, 1), (2, 1), (2, 1))
+    tex_coords((0, 3), (0, 3), (0, 3)),
+    tex_coords((3, 3), (3, 3), (3, 3)),
+    tex_coords((0, 2), (0, 2), (0, 2)),
+    tex_coords((0, 0), (0, 0), (0, 0))
 ]
 
 FACES = [
@@ -344,37 +350,70 @@ class Model(object):
         """
         self._shown.pop(position).delete()
 
-    def show_sector(self, sector):
-        """ Ensure all blocks in the given sector that should be shown are
-        drawn to the canvas.
-        """
-        sec = list(sector)
-        sec[0] = sec[0] % mapSize
-        sec[2] = sec[2] % mapSize
-        if not self.sectors.get(tuple(sec), []):
-            #terrainHeight = 10
-            for x in xrange(SECTOR_SIZE):
+    def generate_sector(self, mapSector, sector):
+        terrainHeight = 0
+        for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
-                    terrainHeight = noise.pnoise2((sector[0] * SECTOR_SIZE + x)/scale, 
-                                    (sector[2] * SECTOR_SIZE + z)/scale, 
+                    terrainHeight = noise.pnoise2((mapSector[0] * SECTOR_SIZE + x)/scale, 
+                                    (mapSector[2] * SECTOR_SIZE + z)/scale, 
                                     octaves=octaves, 
                                     persistence=persistence, 
                                     lacunarity=lacunarity, 
                                     repeatx=1024, 
                                     repeaty=1024, 
-                                    base=0) * 20 + 10
+                                    base=0) * 40 + 20
                     # create a layer stone an grass everywhere.
-                    self.add_block((sec[0] * SECTOR_SIZE + x, 0 - 1, sec[2] * SECTOR_SIZE + z), STONE, immediate=False)
+                    self.add_block((sector[0] * SECTOR_SIZE + x, 0 - 1, sector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
                     
-                    for y in xrange(int(terrainHeight)):
-                        self.add_block((sec[0] * SECTOR_SIZE + x, y, sec[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+                    for y in xrange(int(terrainHeight)-5): # Stone layer
+                        self.add_block((sector[0] * SECTOR_SIZE + x, y, sector[2] * SECTOR_SIZE + z), STONE, immediate=False)
+
+                    for y in xrange(5): # Stone layer
+                        self.add_block((sector[0] * SECTOR_SIZE + x, int(terrainHeight) - 5 + y, sector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+        terrainHeight = int(terrainHeight)
+        # Add trees
+        for x in xrange(5):
+            treePos = ((sector[0] * SECTOR_SIZE) + random.randrange(0,15),terrainHeight,(sector[2] * SECTOR_SIZE) + random.randrange(0,15))
+            while treePos in self.world:
+                terrainHeight = terrainHeight + 1
+                treePos = (treePos[0],terrainHeight,treePos[2])
+            while not treePos in self.world:
+                terrainHeight = terrainHeight - 1
+                treePos = (treePos[0],terrainHeight,treePos[2])
+            for y in xrange(7):
+                self.add_block((treePos[0],treePos[1]+y,treePos[2]), WOOD, immediate=False)
+            treePos = (treePos[0],terrainHeight + 5,treePos[2])
+            leavesPos = 0
+            for x in xrange(-1,2):
+                for y in xrange(5):
+                    for z in xrange(-1,2):
+                        leavesPos = (treePos[0]+x,treePos[1]+y,treePos[2]+z)
+                        if not leavesPos in self.world:
+                            self.add_block(leavesPos, LEAVES, immediate=False)
+            self.add_block((leavesPos[0]-1,leavesPos[1]+1,leavesPos[2]-1), LEAVES, immediate=False)
+                
+
+    def show_sector(self, sector):
+        """ Ensure all blocks in the given sector that should be shown are
+        drawn to the canvas.
+        """
+        print("Showing sector")
+        print(sector)
+        sec = list(sector)
+        sec[0] = sec[0] % mapSize
+        sec[2] = sec[2] % mapSize
+        if not (sec[0] * SECTOR_SIZE,-1,sec[2] * SECTOR_SIZE) in self.world:#self.sectors.get(tuple(sec), []):
+            #terrainHeight = 10
+            self.generate_sector(sector, tuple(sec))
+
+
 
         for position in self.sectors.get(tuple(sec), []):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
             pos[2] = pos[2] % SECTOR_SIZE
             p = (int(pos[0]) + ((sector[0]) * SECTOR_SIZE),int(pos[1]),int(pos[2]) + (sector[2] * SECTOR_SIZE))
-            if p not in self.shown and self.exposed(p):
+            if p not in self.shown and self.exposed(position): # p
                 self.show_block(p, immediate=False) # Map position is the position of the sector on the map
         #for position in self.sectors.get(sector, []):
         #    if position not in self.shown and self.exposed(position):
@@ -691,7 +730,7 @@ class Window(pyglet.window.Window):
                     self.model.show_block(previous)
             elif button == pyglet.window.mouse.LEFT and block:
                 texture = self.model.world[get_world_pos(block)]
-                if texture != STONE:
+                if texture != BEDROCK:
                     self.model.remove_block(block)
         else:
             self.set_exclusive_mouse(True)
@@ -793,8 +832,10 @@ class Window(pyglet.window.Window):
         """
         width, height = self.get_size()
         glEnable( GL_BLEND )
+        # TODO testing these lines to add blending for clear textures
         glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA )
         glEnable(GL_DEPTH_TEST)
+        #done
         viewport = self.get_viewport_size()
         glViewport(0, 0, max(1, viewport[0]), max(1, viewport[1]))
         glMatrixMode(GL_PROJECTION)
