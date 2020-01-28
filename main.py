@@ -14,10 +14,12 @@ from pyglet.window import key, mouse
 
 
 
+
+
 TICKS_PER_SEC = 60
 
 # Size of sectors used to ease block loading.
-SECTOR_SIZE = 16
+SECTOR_SIZE = 8
 
 
 
@@ -34,17 +36,26 @@ MAX_JUMP_HEIGHT = 1.2 # About the height of a block.
 # Use t and the desired MAX_JUMP_HEIGHT to solve for v_0 (jump speed) in
 #    s = s_0 + v_0 * t + (a * t^2) / 2
 JUMP_SPEED = math.sqrt(2 * GRAVITY * MAX_JUMP_HEIGHT)
+
+SWIM_SPEED = 1
 TERMINAL_VELOCITY = 50
+TERMINAL_VELOCITY_SINK = 1
 
 PLAYER_HEIGHT = 2
+
+# The limit to which water can flood
+FLOOD_LIMIT = 100
 
 # How many chunks in front of the player to render
 view_distance = 4
 
 # Size of the map
-mapSize = 16
+mapSize = 512
 
-# OpenGL has limits. This is the max sector we can travel to before we are teleported back to the min sector (sector 1)
+noiseOffsetX = mapSize * SECTOR_SIZE * random.randrange(0,10)
+noiseOffsetY = mapSize * SECTOR_SIZE * random.randrange(0,10)
+
+# OpenGL has limits. This is the max sector we can travel to before we are teleported back to the middle sector
 maxSector = mapSize * 5
 
 # Noise settings
@@ -53,6 +64,8 @@ scale = 100.0
 octaves = 6
 persistence = 0.5
 lacunarity = 2.0
+
+waterHeight = random.randrange(10,20)
 
 if sys.version_info[0] >= 3:
     xrange = range
@@ -78,7 +91,7 @@ def cube_vertices(x, y, z, n):
     ]
 
 
-def tex_coord(x, y, n=4): # N is number of textures - 1
+def tex_coord(x, y, n=2): # N is number of textures - 1
     """ Return the bounding vertices of the texture square.
     """
     m = 1.0 / n
@@ -109,6 +122,20 @@ BEDROCK = 3
 STONE = 4
 WOOD = 5
 LEAVES = 6
+DIRT = 7
+WATER = 8
+
+
+textures = list()
+textures.append([0,255,0])
+textures.append([235,222,52])
+textures.append([179,77,77])
+textures.append([50,50,50])
+textures.append([150,150,150])
+textures.append([145,78,36])
+textures.append([87,150,53])
+textures.append([125,76,55])
+textures.append([0,0,255])
 
 blocks = [
     tex_coords((2, 2), (2, 2), (2, 2)),
@@ -117,11 +144,22 @@ blocks = [
     tex_coords((0, 3), (0, 3), (0, 3)),
     tex_coords((3, 3), (3, 3), (3, 3)),
     tex_coords((0, 2), (0, 2), (0, 2)),
-    tex_coords((0, 0), (0, 0), (0, 0))
+    tex_coords((0, 0), (0, 0), (0, 0)),
+    tex_coords((2, 1), (2, 1), (2, 1)),
+    tex_coords((0, 1), (0, 1), (0, 1))
 ]
 
 FACES = [
     ( 0, 1, 0),
+    ( 0,-1, 0),
+    (-1, 0, 0),
+    ( 1, 0, 0),
+    ( 0, 0, 1),
+    ( 0, 0,-1),
+]
+
+FACESMINUSBOTTOM = [
+    #( 0, 1, 0),
     ( 0,-1, 0),
     (-1, 0, 0),
     ( 1, 0, 0),
@@ -182,10 +220,13 @@ class Model(object):
         # Mapping from sector to a list of positions inside that sector.
         self.sectors = {}
 
+        self.in_water = False
+        self.swim = False
+
         # Simple function queue implementation. The queue is populated with
         # _show_block() and _hide_block() calls
         self.queue = deque()
-
+        
         self._initialize()
 
     def _initialize(self):
@@ -212,7 +253,7 @@ class Model(object):
         previous = None
         for _ in xrange(max_distance * m):
             key = normalize((x, y, z))
-            if key != previous and get_world_pos(key) in self.world:
+            if key != previous and get_world_pos(key) in self.world and self.world[get_world_pos(key)] != WATER:
                 return key, previous
             previous = key
             x, y, z = x + dx / m, y + dy / m, z + dz / m
@@ -225,11 +266,11 @@ class Model(object):
         x, y, z = position
         
         for dx, dy, dz in FACES:
-            if get_world_pos((x + dx, y + dy, z + dz)) not in self.world:
+            if get_world_pos((x + dx, y + dy, z + dz)) not in self.world or (self.world[get_world_pos((x + dx, y + dy, z + dz))] == WATER and self.world[get_world_pos(position)] != WATER):
                 return True
         return False
 
-    def add_block(self, position, texture, immediate=True):
+    def add_block(self, position, texture, immediate=True, show=True):
         """ Add a block with the given `texture` and `position` to the world.
         Parameters
         ----------
@@ -245,9 +286,10 @@ class Model(object):
             self.remove_block(position, immediate)
         self.world[position] = texture
         self.sectors.setdefault(sectorize(position), []).append(position)
-        if immediate:
-            if self.exposed(position):
+        if immediate and show:
+            if texture == WATER and position[1] == waterHeight or (self.exposed(position) and texture != WATER):
                 self.show_block(position)
+            
             self.check_neighbors(position)
 
     def remove_block(self, position, immediate=True):
@@ -303,7 +345,7 @@ class Model(object):
         texture = self.world[world_pos]
         self.shown[world_pos] = texture # tuple(worldPosition)
         if immediate:
-            self._show_block(position, texture)
+            self._show_block(position, texture) # TODO change to position not world_pos
         else:
             self._enqueue(self._show_block, position, texture)
 
@@ -319,12 +361,30 @@ class Model(object):
         """
         x, y, z = position
         vertex_data = cube_vertices(x, y, z, 0.5)
-        texture_data = list(blocks[texture])
+        tex = list()
+        if texture == WATER:
+            tex = tex_coords((0, 1), (0, 1), (0, 1))
+        else:
+            tex = tex_coords((0, 0), (0, 0), (0, 0))
+        texture_data = list(tex)
+
+        red = random.randrange(210,255)/255
+        blue = random.randrange(210,255)/255
+        green = random.randrange(210,255)/255
+        color_data = [
+            int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue),  # top
+            int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue),
+            int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue),
+            int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue),
+            int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue),
+            int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue), int(textures[texture][0] * red),int(textures[texture][1] * green),int(textures[texture][2] * blue),
+        ]
         # create vertex list
         # FIXME Maybe `add_indexed()` should be used instead
         self._shown[get_world_pos(position)] = self.batch.add(24, GL_QUADS, self.group,
             ('v3f/static', vertex_data),
-            ('t2f/static', texture_data))
+            ('t2f/static', texture_data),
+            ('c3B/static', color_data)) # try removing /static
 
     def hide_block(self, position, immediate=True):
         """ Hide the block at the given `position`. Hiding does not remove the
@@ -339,72 +399,91 @@ class Model(object):
         world_pos = get_world_pos(position)
         #pos[0] = pos[0] % (mapSize * SECTOR_SIZE * 0.5)
         #pos[2] = pos[2] % (mapSize * SECTOR_SIZE * 0.5)
-        self.shown.pop(world_pos)
-        if immediate:
-            self._hide_block(world_pos)
-        else:
-            self._enqueue(self._hide_block, world_pos)
+        try:
+            self.shown.pop(world_pos)
+            if immediate:
+                self._hide_block(world_pos)
+            else:
+                self._enqueue(self._hide_block, world_pos)
+        except:
+            print("Failed to hide block")
+            print(world_pos)
 
     def _hide_block(self, position):
         """ Private implementation of the 'hide_block()` method.
         """
         self._shown.pop(position).delete()
 
-    def generate_sector(self, mapSector, sector):
+    # Generate a section of the world randomly
+    def generate_sector(self, mapSector, sector, show=True):
         terrainHeight = 0
+        surface = []
+        surfaceCount = 0
+        
         for x in xrange(SECTOR_SIZE):
                 for z in xrange(SECTOR_SIZE):
-                    terrainHeight = noise.pnoise2((mapSector[0] * SECTOR_SIZE + x)/scale, 
-                                    (mapSector[2] * SECTOR_SIZE + z)/scale, 
+                    # Get the height of the terrain from perlin noise
+                    terrainHeight = noise.pnoise2((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale, 
+                                    (noiseOffsetY + mapSector[2] * SECTOR_SIZE + z)/scale, 
                                     octaves=octaves, 
                                     persistence=persistence, 
                                     lacunarity=lacunarity, 
                                     repeatx=1024, 
                                     repeaty=1024, 
-                                    base=0) * 40 + 20
-                    # create a layer stone an grass everywhere.
-                    self.add_block((sector[0] * SECTOR_SIZE + x, 0 - 1, sector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
+                                    base=0) * 30 + 15
+                    # Add a layer of bedrock
+                    self.add_block((mapSector[0] * SECTOR_SIZE + x, 0 - 1, mapSector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
                     
-                    for y in xrange(int(terrainHeight)-5): # Stone layer
-                        self.add_block((sector[0] * SECTOR_SIZE + x, y, sector[2] * SECTOR_SIZE + z), STONE, immediate=False)
+                    for y in xrange(int(terrainHeight)): # Stone layer
+                        self.add_block((mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z), STONE, immediate=False)
 
-                    for y in xrange(5): # Stone layer
-                        self.add_block((sector[0] * SECTOR_SIZE + x, int(terrainHeight) - 5 + y, sector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
-        terrainHeight = int(terrainHeight)
-        # Add trees
-        for x in xrange(5):
-            treePos = ((sector[0] * SECTOR_SIZE) + random.randrange(0,15),terrainHeight,(sector[2] * SECTOR_SIZE) + random.randrange(0,15))
-            while treePos in self.world:
-                terrainHeight = terrainHeight + 1
-                treePos = (treePos[0],terrainHeight,treePos[2])
-            while not treePos in self.world:
-                terrainHeight = terrainHeight - 1
-                treePos = (treePos[0],terrainHeight,treePos[2])
-            for y in xrange(7):
-                self.add_block((treePos[0],treePos[1]+y,treePos[2]), WOOD, immediate=False)
-            treePos = (treePos[0],terrainHeight + 5,treePos[2])
-            leavesPos = 0
-            for x in xrange(-1,2):
-                for y in xrange(5):
-                    for z in xrange(-1,2):
-                        leavesPos = (treePos[0]+x,treePos[1]+y,treePos[2]+z)
-                        if not leavesPos in self.world:
-                            self.add_block(leavesPos, LEAVES, immediate=False)
-            self.add_block((leavesPos[0]-1,leavesPos[1]+1,leavesPos[2]-1), LEAVES, immediate=False)
-                
+                    for y in xrange(5): # Sand layer
+                        self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
+                    
+                    if terrainHeight < waterHeight: # Add water
+                        for y in xrange(waterHeight - int(terrainHeight)): # Water layer
+                            self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), WATER, immediate=False)
+                            #if y != waterHeight - int(terrainHeight):
+                            #    self.hide_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), True)
+                    else:
+                        for y in xrange(5): # Dirt layer
+                            self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+                        # Grass layer
+                        self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+                        if x > 0 and x < 15 and z > 0 and z < 15:
+                            surface.append((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
+        if terrainHeight > waterHeight and len(surface) > 5:
+            terrainHeight = int(terrainHeight) + 6
+            # Add trees
+            for x in xrange(2):
+                treePos = surface[random.randrange(0, len(surface))]
+                treeHeight = random.randrange(5,10)
+                for y in xrange(treeHeight):
+                    self.add_block((treePos[0],treePos[1]+y,treePos[2]), WOOD, immediate=False)
+                leavesHeight = random.randrange(3,treeHeight)
+                treePos = (treePos[0],treePos[1] + leavesHeight,treePos[2])
+                leavesPos = 0
+                for x in xrange(-1,2):
+                    for y in xrange(treeHeight - leavesHeight):
+                        for z in xrange(-1,2):
+                            leavesPos = (treePos[0]+x,treePos[1]+y,treePos[2]+z)
+                            if not leavesPos in self.world:
+                                self.add_block(leavesPos, LEAVES, immediate=False)
+                self.add_block((leavesPos[0]-1,leavesPos[1] + 1,leavesPos[2]-1), LEAVES, immediate=False)
+                    
 
     def show_sector(self, sector):
         """ Ensure all blocks in the given sector that should be shown are
         drawn to the canvas.
         """
-        print("Showing sector")
-        print(sector)
+        #print("Showing sector")
+        #print(sector)
         sec = list(sector)
         sec[0] = sec[0] % mapSize
         sec[2] = sec[2] % mapSize
         if not (sec[0] * SECTOR_SIZE,-1,sec[2] * SECTOR_SIZE) in self.world:#self.sectors.get(tuple(sec), []):
             #terrainHeight = 10
-            self.generate_sector(sector, tuple(sec))
+            self.generate_sector(tuple(sec), sector) # sector, tuple(sec)
 
 
 
@@ -448,10 +527,47 @@ class Model(object):
                         after_set.add((x + dx, y + dy, z + dz))
         show = after_set - before_set
         hide = before_set - after_set
+        self.show = show
         for sector in show:
             self.show_sector(sector)
         for sector in hide:
             self.hide_sector(sector)
+
+    def generate_sectors(self, before, after, immediate=True):
+        """ Move from sector `before` to sector `after`. A sector is a
+        contiguous x, y sub-region of world. Sectors are used to speed up
+        world rendering.
+        """
+        before_set = set()
+        after_set = set()
+        pad = view_distance + 1
+        for dx in xrange(-pad, pad + 1):
+            for dy in [0]:  # xrange(-pad, pad + 1):
+                for dz in xrange(-pad, pad + 1):
+                    if dx ** 2 + dy ** 2 + dz ** 2 > (pad + 1) ** 2:
+                        continue
+                    if before:
+                        x, y, z = before
+                        before_set.add((x + dx, y + dy, z + dz))
+                    if after:
+                        x, y, z = after
+                        after_set.add((x + dx, y + dy, z + dz))
+        show = after_set - before_set
+        hide = before_set - after_set
+        self.show = show
+        for sector in show:
+            sec = list(sector)
+            sec[0] = sector[0] % mapSize
+            sec[2] = sector[2] % mapSize
+            if not (sec[0] * SECTOR_SIZE,-1,sec[2] * SECTOR_SIZE) in self.world:
+                self.generate_sector(tuple(sec), sector, immediate) # sector, tuple(sec)
+           # self.generate_sector(sec, sector, immediate)
+        #for sector in hide:
+        #    self.hide_sector(sector)
+
+    def reload_sectors(self):
+        for sector in self.show:
+            self.show_sector(sector)
 
     def _enqueue(self, func, *args):
         """ Add `func` to the internal queue.
@@ -489,8 +605,12 @@ class Window(pyglet.window.Window):
         # Whether or not the window exclusively captures the mouse.
         self.exclusive = False
 
+        self.alpha = 1
+
         # When flying gravity has no effect and speed is increased.
         self.flying = False
+
+        
 
         # Strafing is moving lateral to the direction you are facing,
         # e.g. moving to the left or right while continuing to face forward.
@@ -521,6 +641,9 @@ class Window(pyglet.window.Window):
         # Velocity in the y (upward) direction.
         self.dy = 0
 
+        # Whether the player jumped when colliding with a block, used to prevent things from getting too bouncy
+        self.autoJump = False
+
         # A list of blocks the player can place. Hit num keys to cycle.
         self.inventory = [BRICK, GRASS, SAND]
 
@@ -543,6 +666,11 @@ class Window(pyglet.window.Window):
         # This call schedules the `update()` method to be called
         # TICKS_PER_SEC. This is the main game event loop.
         pyglet.clock.schedule_interval(self.update, 1.0 / TICKS_PER_SEC)
+
+        # Generate the initial sectors
+        sector = sectorize(self.position)
+        self.model.generate_sectors(self.sector, sector, False)
+        
 
     def set_exclusive_mouse(self, exclusive):
         """ If `exclusive` is True, the game will capture the mouse, if False
@@ -615,7 +743,10 @@ class Window(pyglet.window.Window):
         self.model.process_queue()
         sector = sectorize(self.position)
         if sector != self.sector:
-            self.model.change_sectors(self.sector, sector)
+            #self.model.generate_sectors(self.sector, sector, False)
+            #self.model.change_sectors(self.sector, sector)
+            self.model._enqueue(self.model.generate_sectors, self.sector, sector, False)
+            self.model._enqueue(self.model.change_sectors, self.sector, sector)
             if self.sector is None:
                 self.model.process_entire_queue()
             self.sector = sector
@@ -638,15 +769,26 @@ class Window(pyglet.window.Window):
         dx, dy, dz = self.get_motion_vector()
         # New position in space, before accounting for gravity.
         dx, dy, dz = dx * d, dy * d, dz * d
+
+        if get_world_pos(self.position) in self.model.world and self.model.world[get_world_pos(self.position)] == WATER and self.model.swim:
+            dy = dt * SWIM_SPEED
+            self.model.in_water = True
+            print("Swimming")
+        else:
+            self.model.in_water = False
         # gravity
-        if not self.flying:
+        if not self.flying and not self.model.in_water:
             # Update your vertical speed: if you are falling, speed up until you
             # hit terminal velocity; if you are jumping, slow down until you
             # start falling.
             self.dy -= dt * GRAVITY
             self.dy = max(self.dy, -TERMINAL_VELOCITY)
             dy += self.dy * dt
-        # collisions
+        if not self.flying and self.model.in_water:
+            self.dy -= dt * GRAVITY * 0.1 # Less gravity underwater (Not really, but we sink slower so it's the same thing)
+            self.dy = max(self.dy, -TERMINAL_VELOCITY_SINK)
+            dy += self.dy * dt
+
         x, y, z = self.position
         # Make sure player is on workable section of world
         if x < mapSize * SECTOR_SIZE:
@@ -657,7 +799,7 @@ class Window(pyglet.window.Window):
             x =  maxSector * SECTOR_SIZE * 0.5
         if z > maxSector * SECTOR_SIZE:
             z =  maxSector * SECTOR_SIZE * 0.5
-
+        # collisions
         x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
         self.position = (x, y, z)
 
@@ -694,15 +836,43 @@ class Window(pyglet.window.Window):
                     op = list(np)
                     op[1] -= dy
                     op[i] += face[i]
-                    if get_world_pos(tuple(op)) not in self.model.world:
+                    if get_world_pos(tuple(op)) not in self.model.world or self.model.world[get_world_pos(tuple(op))] == WATER:
                         continue
                     p[i] -= (d - pad) * face[i]
                     if face == (0, -1, 0) or face == (0, 1, 0):
                         # You are colliding with the ground or ceiling, so stop
                         # falling / rising.
                         self.dy = 0
+                    elif self.autoJump:
+                        # You are colliding with the side, so jump
+                        if self.dy == 0:
+                            self.dy = JUMP_SPEED
+                            #self.autoJump = True
                     break
         return tuple(p)
+
+    def flood(self,block, depth=0):
+        self.model.add_block(get_world_pos(block), WATER, immediate=True)
+        if self.model.exposed(get_world_pos(block)):
+            self.model.show_block(block)
+        x, y, z = block
+        #print(get_world_pos(block))
+        for dx, dy, dz in FACESMINUSBOTTOM:
+            key = (x + dx, y + dy, z + dz)
+            if depth < FLOOD_LIMIT and not get_world_pos(key) in self.model.world:
+                self.flood(key,depth+1) # Fill water here
+                break
+
+    def water_fill_logic(self, block):
+        x, y, z = get_world_pos(block)
+        #print(get_world_pos(block))
+        for dx, dy, dz in FACESMINUSBOTTOM:
+            key = (x + dx, y + dy, z + dz)
+            if key not in self.model.world:
+                continue
+            if self.model.world[key] == WATER: # Fill in water if a block was removed
+                self.flood(block)
+                break
 
     def on_mouse_press(self, x, y, button, modifiers):
         """ Called when a mouse button is pressed. See pyglet docs for button
@@ -728,10 +898,13 @@ class Window(pyglet.window.Window):
                 if previous:
                     self.model.add_block(get_world_pos(previous), self.block)
                     self.model.show_block(previous)
+                    #self.reload_sectors()
             elif button == pyglet.window.mouse.LEFT and block:
                 texture = self.model.world[get_world_pos(block)]
-                if texture != BEDROCK:
+                if texture != BEDROCK and texture != WATER:
                     self.model.remove_block(block)
+                    self.model.hide_block(block)
+                    self.water_fill_logic(block)
         else:
             self.set_exclusive_mouse(True)
 
@@ -763,6 +936,7 @@ class Window(pyglet.window.Window):
             Number representing any modifying keys that were pressed.
         """
         if symbol == key.W:
+            self.autoJump = True
             self.strafe[0] -= 1
         elif symbol == key.S:
             self.strafe[0] += 1
@@ -773,6 +947,7 @@ class Window(pyglet.window.Window):
         elif symbol == key.SPACE:
             if self.dy == 0:
                 self.dy = JUMP_SPEED
+            self.model.swim = True
         elif symbol == key.ESCAPE:
             self.set_exclusive_mouse(False)
         elif symbol == key.TAB:
@@ -792,6 +967,7 @@ class Window(pyglet.window.Window):
             Number representing any modifying keys that were pressed.
         """
         if symbol == key.W:
+            self.autoJump = False
             self.strafe[0] += 1
         elif symbol == key.S:
             self.strafe[0] -= 1
@@ -799,6 +975,8 @@ class Window(pyglet.window.Window):
             self.strafe[1] += 1
         elif symbol == key.D:
             self.strafe[1] -= 1
+        elif symbol == key.SPACE:
+            self.model.swim = False
 
     def on_resize(self, width, height):
         """ Called when the window is resized to a new `width` and `height`.
@@ -831,9 +1009,10 @@ class Window(pyglet.window.Window):
         """ Configure OpenGL to draw in 3d.
         """
         width, height = self.get_size()
-        glEnable( GL_BLEND )
+        #glEnable( GL_BLEND )
         # TODO testing these lines to add blending for clear textures
-        glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA )
+        #glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        #glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
         glEnable(GL_DEPTH_TEST)
         #done
         viewport = self.get_viewport_size()
@@ -854,7 +1033,19 @@ class Window(pyglet.window.Window):
         """
         self.clear()
         self.set_3d()
-        glColor3d(1, 1, 1)
+        glColor3d(1,1,1)
+        #glColor3d(1, 1, 1)
+        #glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (GLfloat * 4)(1,1,1,1))
+        #glTranslatef(self.position[0],256,self.position[2])
+        #glPushMatrix()
+        #glLightfv(GL_LIGHT0, GL_POSITION,(GLfloat * 3)(self.position[0], 256, self.position[2]))
+        #glLightfv(GL_LIGHT0, GL_AMBIENT, (GLfloat * 4)(self.alpha, self.alpha, self.alpha, self.alpha))
+        #glLightfv(GL_LIGHT0, GL_DIFFUSE, (GLfloat * 4)(self.alpha, self.alpha, self.alpha, self.alpha))
+        #glLightfv(GL_LIGHT0, GL_SPECULAR, (GLfloat * 4)(self.alpha, self.alpha, self.alpha, self.alpha))
+        glFogfv(GL_FOG_COLOR, (GLfloat * 4)(0.5 * self.alpha, 0.69 * self.alpha, 1.0 * self.alpha, 1))
+        glClearColor(0.5 * self.alpha, 0.69 * self.alpha, 1.0 * self.alpha, 1)
+        #glTranslatef(-self.position[0],-256,-self.position[2])
+        #glPopMatrix()
         self.model.batch.draw()
         self.draw_focused_block()
         self.set_2d()
@@ -913,10 +1104,16 @@ def setup():
     """ Basic OpenGL configuration.
     """
     # Set the color of "clear", i.e. the sky, in rgba.
+    glShadeModel (GL_SMOOTH);
+
     glClearColor(0.5, 0.69, 1.0, 1)
     # Enable culling (not rendering) of back-facing facets -- facets that aren't
     # visible to you.
     glEnable(GL_CULL_FACE)
+    # Enable lighting
+    #glEnable(GL_DEPTH_TEST)
+    #glEnable(GL_LIGHTING)
+    #glEnable(GL_LIGHT0)
     # Set the texture minification/magnification function to GL_NEAREST (nearest
     # in Manhattan distance) to the specified texture coordinates. GL_NEAREST
     # "is generally faster than GL_LINEAR, but it can produce textured images
