@@ -1,0 +1,96 @@
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "_ctypes/callbacks.c", line 237, in 'calling callback function'
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 665, in f
+    result = event_handler(msg, wParam, lParam)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 882, in _event_mousemove
+    self.dispatch_event('on_mouse_drag',
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\__init__.py", line 1330, in dispatch_event
+    if EventDispatcher.dispatch_event(self, *args) != False:
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 428, in dispatch_event
+    self._raise_dispatch_exception(event_type, args, getattr(self, event_type), exception)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 478, in _raise_dispatch_exception
+    raise TypeError("The '{0}' event was dispatched with {1} arguments, "
+TypeError: The 'on_mouse_drag' event was dispatched with 6 arguments, but your handler 'on_mouse_drag' at c:/Users/jaspe/Documents/GitHub/sonobe/main.py:1058 accepts only 6 arguments.
+Traceback (most recent call last):
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 423, in dispatch_event
+    if getattr(self, event_type)(*args):
+TypeError: on_mouse_drag() takes 6 positional arguments but 7 were given
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "_ctypes/callbacks.c", line 237, in 'calling callback function'
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 665, in f
+    result = event_handler(msg, wParam, lParam)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 882, in _event_mousemove
+    self.dispatch_event('on_mouse_drag',
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\__init__.py", line 1330, in dispatch_event
+    if EventDispatcher.dispatch_event(self, *args) != False:
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 428, in dispatch_event
+    self._raise_dispatch_exception(event_type, args, getattr(self, event_type), exception)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 478, in _raise_dispatch_exception
+    raise TypeError("The '{0}' event was dispatched with {1} arguments, "
+TypeError: The 'on_mouse_drag' event was dispatched with 6 arguments, but your handler 'on_mouse_drag' at c:/Users/jaspe/Documents/GitHub/sonobe/main.py:1058 accepts only 6 arguments.
+Traceback (most recent call last):
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 423, in dispatch_event
+    if getattr(self, event_type)(*args):
+TypeError: on_mouse_drag() takes 6 positional arguments but 7 were given
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "_ctypes/callbacks.c", line 237, in 'calling callback function'
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 665, in f
+    result = event_handler(msg, wParam, lParam)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 882, in _event_mousemove
+    self.dispatch_event('on_mouse_drag',
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\__init__.py", line 1330, in dispatch_event
+    if EventDispatcher.dispatch_event(self, *args) != False:
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 428, in dispatch_event
+    self._raise_dispatch_exception(event_type, args, getattr(self, event_type), exception)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 478, in _raise_dispatch_exception
+    raise TypeError("The '{0}' event was dispatched with {1} arguments, "
+TypeError: The 'on_mouse_drag' event was dispatched with 6 arguments, but your handler 'on_mouse_drag' at c:/Users/jaspe/Documents/GitHub/sonobe/main.py:1058 accepts only 6 arguments.
+Traceback (most recent call last):
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 423, in dispatch_event
+    if getattr(self, event_type)(*args):
+TypeError: on_mouse_drag() takes 6 positional arguments but 7 were given
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "_ctypes/callbacks.c", line 237, in 'calling callback function'
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 665, in f
+    result = event_handler(msg, wParam, lParam)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 882, in _event_mousemove
+    self.dispatch_event('on_mouse_drag',
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\__init__.py", line 1330, in dispatch_event
+    if EventDispatcher.dispatch_event(self, *args) != False:
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 428, in dispatch_event
+    self._raise_dispatch_exception(event_type, args, getattr(self, event_type), exception)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 478, in _raise_dispatch_exception
+    raise TypeError("The '{0}' event was dispatched with {1} arguments, "
+TypeError: The 'on_mouse_drag' event was dispatched with 6 arguments, but your handler 'on_mouse_drag' at c:/Users/jaspe/Documents/GitHub/sonobe/main.py:1058 accepts only 6 arguments.
+Traceback (most recent call last):
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 423, in dispatch_event
+    if getattr(self, event_type)(*args):
+TypeError: on_mouse_drag() takes 6 positional arguments but 7 were given
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "_ctypes/callbacks.c", line 237, in 'calling callback function'
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 665, in f
+    result = event_handler(msg, wParam, lParam)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\win32\__init__.py", line 882, in _event_mousemove
+    self.dispatch_event('on_mouse_drag',
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\window\__init__.py", line 1330, in dispatch_event
+    if EventDispatcher.dispatch_event(self, *args) != False:
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 428, in dispatch_event
+    self._raise_dispatch_exception(event_type, args, getattr(self, event_type), exception)
+  File "C:\Users\jaspe\AppData\Local\Programs\Python\Python38\lib\site-packages\pyglet\event.py", line 478, in _raise_dispatch_exception
+    raise TypeError("The '{0}' event was dispatched with {1} arguments, "
+TypeError: The 'on_mouse_drag' event was dispatched with 6 arguments, but your handler 'on_mouse_drag' at c:/Users/jaspe/Documents/GitHub/sonobe/main.py:1058 accepts only 6 arguments.
+PS C:\Users\jaspe\Documents\GitHub\sonobe>
