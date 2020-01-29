@@ -50,7 +50,7 @@ FLOOD_LIMIT = 100
 view_distance = 4
 
 # Size of the map
-mapSize = 512
+mapSize = 2048
 
 noiseOffsetX = mapSize * SECTOR_SIZE * random.randrange(0,10)
 noiseOffsetY = mapSize * SECTOR_SIZE * random.randrange(0,10)
@@ -65,7 +65,8 @@ octaves = 6
 persistence = 0.5
 lacunarity = 2.0
 
-waterHeight = random.randrange(10,20)
+
+waterHeight = random.randrange(10,15)
 
 if sys.version_info[0] >= 3:
     xrange = range
@@ -88,6 +89,11 @@ def cube_vertices(x, y, z, n):
         x+n,y-n,z+n, x+n,y-n,z-n, x+n,y+n,z-n, x+n,y+n,z+n,  # right
         x-n,y-n,z+n, x+n,y-n,z+n, x+n,y+n,z+n, x-n,y+n,z+n,  # front
         x+n,y-n,z-n, x-n,y-n,z-n, x-n,y+n,z-n, x+n,y+n,z-n,  # back
+    ]
+
+def quad_verticies(x,y,n):
+    return [
+        x-n,y-n, x+n,y-n, x+n,y+n, x-n,y+n,
     ]
 
 
@@ -124,6 +130,11 @@ WOOD = 5
 LEAVES = 6
 DIRT = 7
 WATER = 8
+COAL_ORE = 9
+IRON_ORE = 10
+COPPER_ORE = 11
+TIN_ORE = 12
+GOLD_ORE = 13
 
 
 textures = list()
@@ -136,6 +147,17 @@ textures.append([145,78,36])
 textures.append([87,150,53])
 textures.append([125,76,55])
 textures.append([0,0,255])
+textures.append([69,69,69])
+textures.append([161,65,55])
+textures.append([158,49,36])
+textures.append([163,163,163])
+textures.append([214,171,41])
+
+ORE_MIN = 1
+ORE_MAX = 3
+ORES_PER_SECTOR = 10
+
+#textures.append([,,])
 
 blocks = [
     tex_coords((2, 2), (2, 2), (2, 2)),
@@ -363,7 +385,7 @@ class Model(object):
         vertex_data = cube_vertices(x, y, z, 0.5)
         tex = list()
         if texture == WATER:
-            tex = tex_coords((0, 1), (0, 1), (0, 1))
+            tex = tex_coords((1, 0), (1, 0), (1, 0))
         else:
             tex = tex_coords((0, 0), (0, 0), (0, 0))
         texture_data = list(tex)
@@ -401,18 +423,33 @@ class Model(object):
         #pos[2] = pos[2] % (mapSize * SECTOR_SIZE * 0.5)
         try:
             self.shown.pop(world_pos)
-            if immediate:
-                self._hide_block(world_pos)
-            else:
-                self._enqueue(self._hide_block, world_pos)
         except:
             print("Failed to hide block")
             print(world_pos)
+        if immediate:
+            self._hide_block(world_pos)
+        else:
+            self._enqueue(self._hide_block, world_pos)
 
     def _hide_block(self, position):
         """ Private implementation of the 'hide_block()` method.
         """
-        self._shown.pop(position).delete()
+        try:
+            self._shown.pop(position).delete()
+        except:
+            try:
+                self._shown.pop(get_world_pos(position)).delete()
+            except:
+                print("Failed to hide block at ")
+                print(position)
+
+    def add_ore(self, position, size, ore):
+        x,y,z = position
+        self.add_block(position, ore, immediate=False)
+        if size > 0:
+            for dx, dy, dz in FACES:
+                if get_world_pos((x + dx, y + dy, z + dz)) in self.world and self.world[get_world_pos((x + dx, y + dy, z + dz))] == STONE:
+                    self.add_ore(get_world_pos((x + dx, y + dy, z + dz)), size-1, ore)
 
     # Generate a section of the world randomly
     def generate_sector(self, mapSector, sector, show=True):
@@ -452,6 +489,10 @@ class Model(object):
                         self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
                         if x > 0 and x < 15 and z > 0 and z < 15:
                             surface.append((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
+        # Add ores
+        for x in range(ORES_PER_SECTOR):
+            self.add_ore((mapSector[0] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE), random.randrange(0,int(terrainHeight)), mapSector[2] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE)), random.randrange(ORE_MIN,ORE_MAX), random.randrange(COAL_ORE, GOLD_ORE+1))
+
         if terrainHeight > waterHeight and len(surface) > 5:
             terrainHeight = int(terrainHeight) + 6
             # Add trees
@@ -470,7 +511,7 @@ class Model(object):
                             if not leavesPos in self.world:
                                 self.add_block(leavesPos, LEAVES, immediate=False)
                 self.add_block((leavesPos[0]-1,leavesPos[1] + 1,leavesPos[2]-1), LEAVES, immediate=False)
-                    
+
 
     def show_sector(self, sector):
         """ Ensure all blocks in the given sector that should be shown are
@@ -638,6 +679,8 @@ class Window(pyglet.window.Window):
         # The crosshairs at the center of the screen.
         self.reticle = None
 
+        self.inventory_bar = None
+
         # Velocity in the y (upward) direction.
         self.dy = 0
 
@@ -662,6 +705,7 @@ class Window(pyglet.window.Window):
         self.label = pyglet.text.Label('', font_name='Arial', font_size=18,
             x=10, y=self.height - 10, anchor_x='left', anchor_y='top',
             color=(0, 0, 0, 255))
+
 
         # This call schedules the `update()` method to be called
         # TICKS_PER_SEC. This is the main game event loop.
@@ -861,6 +905,7 @@ class Window(pyglet.window.Window):
             key = (x + dx, y + dy, z + dz)
             if depth < FLOOD_LIMIT and not get_world_pos(key) in self.model.world:
                 self.flood(key,depth+1) # Fill water here
+                self.model.check_neighbors(get_world_pos(key))
                 break
 
     def water_fill_logic(self, block):
@@ -872,6 +917,7 @@ class Window(pyglet.window.Window):
                 continue
             if self.model.world[key] == WATER: # Fill in water if a block was removed
                 self.flood(block)
+                self.model.check_neighbors(block)
                 break
 
     def on_mouse_press(self, x, y, button, modifiers):
@@ -903,7 +949,7 @@ class Window(pyglet.window.Window):
                 texture = self.model.world[get_world_pos(block)]
                 if texture != BEDROCK and texture != WATER:
                     self.model.remove_block(block)
-                    self.model.hide_block(block)
+                    self.model.hide_block(get_world_pos(block))
                     self.water_fill_logic(block)
         else:
             self.set_exclusive_mouse(True)
@@ -1051,6 +1097,8 @@ class Window(pyglet.window.Window):
         self.set_2d()
         self.draw_label()
         self.draw_reticle()
+        self.draw_inventory_bar()
+        
 
     def draw_focused_block(self):
         """ Draw black edges around the block that is currently under the
@@ -1065,6 +1113,69 @@ class Window(pyglet.window.Window):
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             pyglet.graphics.draw(24, GL_QUADS, ('v3f/static', vertex_data))
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+
+    def draw_inventory_bar(self):
+        """ Draw the label in the top left of the screen.
+        """
+        #x, y, z = self.position
+        #self.label.text = '%02d (%.2f, %.2f, %.2f) %d / %d' % (
+        #    pyglet.clock.get_fps(), x, y, z,
+        #    len(self.model._shown), len(self.model.world))
+        #self.label.draw()
+        red = 255#random.randrange(0,255)
+        green = 0#random.randrange(0,255)
+        blue = 0#random.randrange(0,255)
+        color_data = [
+            red,green,blue, red,green,blue, red,green,blue, red,green,blue,
+        ]
+        tex = (0,0)
+        texture_data = list(tex_coord(*tex))
+        
+        x, y = self.width // 2, self.height // 2
+        #self.inventory_bar = 
+        #pyglet.graphics.vertex_list(4,
+        #    ('v2i', quad_verticies(x,y,100)),
+        #    ('t2f', texture_data),
+            #('c3B', color_data)
+        #)
+        inventory_size = 512
+        inventory_scale = self.width/inventory_size * 0.05
+        inventory_padding = inventory_size * inventory_scale * 0.25
+
+        inventory_sprites = list()
+        inventory_labels = list()
+                
+        glColor3d(1, 1, 1)
+        texture_image = pyglet.image.load('sonobe.png')
+        #pyglet.graphics.draw(1, GL_POINTS, ('v2i',(10,20)))
+        for item in range(len(self.inventory)):
+            if item < 9:
+                inventory_sprites.append(pyglet.sprite.Sprite(texture_image, x=inventory_padding + (inventory_padding + (inventory_size * inventory_scale)) * item, y=inventory_padding))
+                inventory_sprites[item].scale = inventory_scale
+                inventory_sprites[item].color = textures[self.inventory[item]]
+                inventory_sprites[item].draw()
+                inventory_labels.append(pyglet.text.Label(str(self.inventory[item]), font_name='Arial', font_size=18,
+                x=(inventory_padding + inventory_size * inventory_scale * 0.4) + (inventory_padding + (inventory_size * inventory_scale)) * item, y=(inventory_padding + inventory_size * inventory_scale * 0.7), anchor_x='left', anchor_y='top',
+                color=(0, 0, 0, 255)))
+
+                inventory_labels[item].draw()
+                #texture_sprite.width = 100
+                #texture_sprite.height = 100
+                
+            else:
+                break
+        
+            
+        
+        #self.inventory_bar.draw(GL_QUADS)
+        
+        #texture_grid = pyglet.image.ImageGrid('texture.png', 2, 2)
+        #sprite = pyglet.sprite.Sprite(img=texture_grid[0])
+        ##sprite.width = 100
+        #sprite.height = 100
+        #sprite.x = 100
+        #sprite.y = 100
+        #sprite.draw()
 
     def draw_label(self):
         """ Draw the label in the top left of the screen.
