@@ -12,14 +12,20 @@ from pyglet.gl import *
 from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
 
+import pickle
+import os
 
-
+SAVE_PATH = pyglet.resource.get_settings_path('sonobe')
+print("Game path is")
+print(SAVE_PATH)
+WORLD_FILE = os.path.join(SAVE_PATH,'world.snb')
+PLAYER_FILE = os.path.join(SAVE_PATH,'player.snb')
 
 
 TICKS_PER_SEC = 60
 
 # Size of sectors used to ease block loading.
-SECTOR_SIZE = 8
+SECTOR_SIZE = 16
 
 
 
@@ -49,7 +55,7 @@ FLOOD_LIMIT = 100
 INVENTORY_SIZE = 9 * 4
 
 # How many chunks in front of the player to render
-view_distance = 4
+view_distance = 3
 
 # Size of the map
 mapSize = 2048
@@ -70,6 +76,8 @@ lacunarity = 2.0
 
 
 waterHeight = random.randrange(10,15)
+
+runtime = 0
 
 if sys.version_info[0] >= 3:
     xrange = range
@@ -244,6 +252,13 @@ class Model(object):
 
         # A mapping from position to the texture of the block at that position.
         # This defines all the blocks that are currently in the world.
+
+        #try:
+        
+        #if self.world == None:
+        #except:
+            #print("Failed to load world")
+            #self.world = {}
         self.world = {}
 
         # Same mapping as `world` but only contains blocks that are shown.
@@ -262,12 +277,40 @@ class Model(object):
         # _show_block() and _hide_block() calls
         self.queue = deque()
         
+        
+        
         self._initialize()
 
     def _initialize(self):
         """ Initialize the world by placing all the blocks.
         """
         print("Starting")
+        self.load_world()
+    
+    def load_world(self):
+        try:
+            with open(WORLD_FILE, 'rb') as file:
+                loaded_world = pickle.load(file)
+                noiseOffsetX = loaded_world[0]
+                noiseOffsetY = loaded_world[1]
+                world = loaded_world[2]
+                for position in world:
+                    self.add_block(position, world[position], immediate=False, show=False)
+        except:
+            print("Failed to load world")
+
+    def save_world(self):
+        if not os.path.exists(SAVE_PATH):
+            os.mkdir(SAVE_PATH)
+        with open(WORLD_FILE, 'wb') as file:
+            world_save = list()
+            world_save.append(noiseOffsetX)
+            world_save.append(noiseOffsetY)
+            world_save.append(self.world)
+            pickle.dump(world_save, file)
+
+    #def save_world(self):
+    #    pickle.dump(self.inventory, open(INVENTORY_FILE, 'wb'))
         
 
     def hit_test(self, position, vector, max_distance=8):
@@ -481,7 +524,7 @@ class Model(object):
                                     lacunarity=lacunarity, 
                                     repeatx=1024, 
                                     repeaty=1024, 
-                                    base=0) * 30 + 15
+                                    base=0) * 30 + 10
                     # Add a layer of bedrock
                     self.add_block((mapSector[0] * SECTOR_SIZE + x, 0 - 1, mapSector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
                     
@@ -539,9 +582,6 @@ class Model(object):
         if not (sec[0] * SECTOR_SIZE,-1,sec[2] * SECTOR_SIZE) in self.world:#self.sectors.get(tuple(sec), []):
             #terrainHeight = 10
             self.generate_sector(tuple(sec), sector) # sector, tuple(sec)
-
-
-
         for position in self.sectors.get(tuple(sec), []):#self.sectors.get(sector, []):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
@@ -702,10 +742,15 @@ class Window(pyglet.window.Window):
         self.autoJump = False
 
         # A list of blocks the player can place. Hit num keys to cycle.
-        self.inventory = list()#[BRICK, GRASS, SAND]
+        self.load_player()
 
         # The current block the user can place. Hit num keys to cycle.
         self.block = 0
+
+        self.runtime = 0
+
+        self.held_item = None
+        self.holding_item = False
 
         self.inventory_display_size = 0
         self.inventory_padding = 0
@@ -732,17 +777,41 @@ class Window(pyglet.window.Window):
         sector = sectorize(self.position)
         self.model.generate_sectors(self.sector, sector, False)
 
-        self.init_inventory()
 
-    def init_inventory(self):
+
+        self.update_inventory()
+
+    def load_player(self):
+        try:
+            with open(PLAYER_FILE, 'rb') as file:
+                player = pickle.load(file)
+                self.position = player[0]
+                self.inventory = player[1]
+        except:
+            print("Failed to load inventory")
+            self.position = (maxSector * SECTOR_SIZE * 0.5, 100, maxSector * SECTOR_SIZE * 0.5)
+            self.inventory = list()
+            for x in range(INVENTORY_SIZE):
+                self.inventory.append(list())
+
+    def save_player(self):
+        if not os.path.exists(SAVE_PATH):
+            os.mkdir(SAVE_PATH)
+        with open(PLAYER_FILE, 'wb') as file:
+            player = list()
+            player.append(self.position)
+            player.append(self.inventory)
+            pickle.dump(player, file)
+
+    def update_inventory(self):
         tex = (0,0)
         texture_data = list(tex_coord(*tex))
         
         inventory_size = 512
-        inventory_scale = self.width/inventory_size * 0.05
-        self.inventory_display_size = inventory_size * inventory_scale
+        self.inventory_scale = self.width/inventory_size * 0.05
+        self.inventory_display_size = inventory_size * self.inventory_scale
         self.inventory_padding = self.inventory_display_size * 0.25
-        label_font_size = self.inventory_display_size * 0.3
+        self.label_font_size = self.inventory_display_size * 0.3
 
         self.inventory_sprites = list()
         self.inventory_labels = list()
@@ -750,36 +819,29 @@ class Window(pyglet.window.Window):
         glColor3d(1, 1, 1)
         texture_image = pyglet.image.load('sonobe.png')
         paper_texture_image = pyglet.image.load('paper.png')
-        #pyglet.graphics.draw(1, GL_POINTS, ('v2i',(10,20)))
         for item in range(INVENTORY_SIZE):
-            if item < 9 and item < len(self.inventory):
-                self.inventory_sprites.append(pyglet.sprite.Sprite(texture_image, x=self.inventory_padding + (self.inventory_padding + (inventory_size * inventory_scale)) * item, y=self.inventory_padding))
-                self.inventory_sprites[item].scale = inventory_scale
+            if item < 9 and item < len(self.inventory) and not self.inventory[item] == list():
+                self.inventory_sprites.append(pyglet.sprite.Sprite(texture_image, x=self.inventory_padding + (self.inventory_padding + (inventory_size * self.inventory_scale)) * item, y=self.inventory_padding))
+                self.inventory_sprites[item].scale = self.inventory_scale
                 self.inventory_sprites[item].color = textures[self.inventory[item][0]]
-                #inventory_sprites[item].draw()
-                self.inventory_labels.append(pyglet.text.Label(str(self.inventory[item][1]), font_name='Arial', font_size=label_font_size,
-                x=(self.inventory_padding + inventory_size * inventory_scale * 0.4) + (self.inventory_padding + (inventory_size * inventory_scale)) * item, y=(self.inventory_padding + inventory_size * inventory_scale * 0.7), anchor_x='left', anchor_y='top',
+                self.inventory_labels.append(pyglet.text.Label(str(self.inventory[item][1]), font_name='Arial', font_size=self.label_font_size,
+                x=(self.inventory_padding + inventory_size * self.inventory_scale * 0.4) + (self.inventory_padding + (inventory_size * self.inventory_scale)) * item, y=(self.inventory_padding + inventory_size * self.inventory_scale * 0.7), anchor_x='left', anchor_y='top',
                 color=(0, 0, 0, 255)))
-
-                #inventory_labels[item].draw()
-                #texture_sprite.width = 100
-                #texture_sprite.height = 100
-                
-            elif item < len(self.inventory):
-                y_offset = item % 9 + 1 * (self.inventory_display_size + self.inventory_padding)
-                self.inventory_sprites.append(pyglet.sprite.Sprite(texture_image, x=self.inventory_padding + (self.inventory_padding + (inventory_size * inventory_scale)) * (item%9), y=self.inventory_padding + y_offset))
-                self.inventory_sprites[item].scale = inventory_scale
-                self.inventory_sprites[item].color = textures[self.inventory[item][0]]
-                #inventory_sprites[item].draw()
-                self.inventory_labels.append(pyglet.text.Label(str(self.inventory[item][1]), font_name='Arial', font_size=label_font_size,
-                x=(self.inventory_padding + inventory_size * inventory_scale * 0.4) + (self.inventory_padding + (inventory_size * inventory_scale)) * (item%9), y=(self.inventory_padding + inventory_size * inventory_scale * 0.7) + y_offset, anchor_x='left', anchor_y='top',
-                color=(0, 0, 0, 255)))
-                #inventory_labels[item].draw()
-            else:#elif item < 9
+            elif item < len(self.inventory) and not self.inventory[item] == list():
                 y_offset = (item // 9) * (self.inventory_display_size + self.inventory_padding)
-                self.inventory_sprites.append(pyglet.sprite.Sprite(paper_texture_image, x=self.inventory_padding + (self.inventory_padding + (inventory_size * inventory_scale)) * (item%9), y=self.inventory_padding + y_offset))
-                self.inventory_sprites[item].scale = inventory_scale
+                self.inventory_sprites.append(pyglet.sprite.Sprite(texture_image, x=self.inventory_padding + (self.inventory_padding + (inventory_size * self.inventory_scale)) * (item%9), y=self.inventory_padding + y_offset))
+                self.inventory_sprites[item].scale = self.inventory_scale
+                self.inventory_sprites[item].color = textures[self.inventory[item][0]]
+                self.inventory_labels.append(pyglet.text.Label(str(self.inventory[item][1]), font_name='Arial', font_size=self.label_font_size,
+                x=(self.inventory_padding + inventory_size * self.inventory_scale * 0.4) + (self.inventory_padding + (inventory_size * self.inventory_scale)) * (item%9), y=(self.inventory_padding + inventory_size * self.inventory_scale * 0.7) + y_offset, anchor_x='left', anchor_y='top',
+                color=(0, 0, 0, 255)))
+            else:
+                y_offset = (item // 9) * (self.inventory_display_size + self.inventory_padding)
+                self.inventory_sprites.append(pyglet.sprite.Sprite(paper_texture_image, x=self.inventory_padding + (self.inventory_padding + (inventory_size * self.inventory_scale)) * (item%9), y=self.inventory_padding + y_offset))
+                self.inventory_sprites[item].scale = self.inventory_scale
                 self.inventory_sprites[item].color = (255/2,255/2,255/2)
+                self.inventory_sprites[item].opacity = 200
+                self.inventory_labels.append(None)
         
 
     def set_exclusive_mouse(self, exclusive):
@@ -842,6 +904,10 @@ class Window(pyglet.window.Window):
             dz = 0.0
         return (dx, dy, dz)
 
+    def save(self):
+        self.model.save_world()
+        self.save_player()
+
     def update(self, dt):
         """ This method is scheduled to be called repeatedly by the pyglet
         clock.
@@ -860,6 +926,11 @@ class Window(pyglet.window.Window):
             if self.sector is None:
                 self.model.process_entire_queue()
             self.sector = sector
+        self.runtime = self.runtime + 1
+        if self.runtime % 1000 == 0:
+            print("Saving world")
+            self.save()
+
         m = 8
         dt = min(dt, 0.2)
         for _ in xrange(m):
@@ -975,7 +1046,6 @@ class Window(pyglet.window.Window):
                 break
 
     def water_fill_logic(self, block):
-        self.init_inventory()
         x, y, z = get_world_pos(block)
         #print(get_world_pos(block))
         for dx, dy, dz in FACESMINUSBOTTOM:
@@ -990,27 +1060,32 @@ class Window(pyglet.window.Window):
     # Inventory is structured as list with each item a list containing the item code and item count. 
     # Returns true if inventory has space, false if it is empty
     def collect_block(self, block):
-        self.init_inventory()
         pos = get_world_pos(block)
         item_code = self.model.world[pos]
         # Check if the item is already in the inventory
         for item in self.inventory:
-            if item[0] == item_code and item[1] < 99:
+            if (not item == list()) and (item[0] == item_code and item[1] < 99):
                 item[1] = item[1] + 1
+                print("Collected block1")
                 return True
         # If the item  is not and inventory is not full
-        if len(self.inventory) < INVENTORY_SIZE:
-            self.inventory.append([item_code, 1])
-            return True
+        for x in range(len(self.inventory)):
+            if self.inventory[x] == list():
+                self.inventory[x] = [item_code, 1]
+                print("Collected new block")
+                return True
+        print("Failed to collect block")
         return False
 
     # Handle the inventory. If player has a block, return true and remove it, return false otherwise
     def place_block(self, position):
-        if self.block < len(self.inventory):
+        if not self.inventory[self.block] == list():
             self.inventory[self.block][1] = self.inventory[self.block][1] - 1
             self.model.add_block(get_world_pos(position), self.inventory[self.block][0])
             self.model.show_block(position)
-            if(self.inventory[self.block][1] == 0): self.inventory.remove(self.inventory[self.block])
+            if(self.inventory[self.block][1] == 0): 
+                self.inventory[self.block] = list()
+                self.update_inventory()
             return
             
 
@@ -1037,33 +1112,65 @@ class Window(pyglet.window.Window):
                 # ON OSX, control + left click = right click.
                 if previous and self.block != None:
                     self.place_block(previous)
-                        
-                    
-                    #self.reload_sectors()
             elif button == pyglet.window.mouse.LEFT and block:
                 texture = self.model.world[get_world_pos(block)]
                 if texture != BEDROCK and texture != WATER:
+                    print("Clicked")
                     if self.collect_block(block):
+                        self.update_inventory()
                         self.model.remove_block(block)
                         self.model.hide_block(get_world_pos(block))
                         self.water_fill_logic(block)
-        else:
+        else: 
+            # If the inventory was not clicked on lock the pointer
             if x > 9 * (self.inventory_display_size + self.inventory_padding) + self.inventory_padding or y > (INVENTORY_SIZE // 9) * (self.inventory_display_size + self.inventory_padding) + self.inventory_padding:
                 self.set_exclusive_mouse(True)
                 self.show_inventory = False
                 pass
+            else: # If the inventory was clicked on
+                for item in range(INVENTORY_SIZE):
+                    y_offset = (item // 9) * (self.inventory_display_size + self.inventory_padding)
+                    if x > self.inventory_padding + (item % 9) * (self.inventory_display_size + self.inventory_padding) and x < self.inventory_padding + self.inventory_display_size + (item%9) * (self.inventory_display_size + self.inventory_padding) and y > self.inventory_padding + y_offset and y < self.inventory_padding + y_offset + self.inventory_display_size:
+                        print("Clicked")
+                        print(item)
+                        if item < len(self.inventory) and self.show_inventory and not self.inventory[item] == list():
+                            self.held_item = item
+                            self.holding_item = True
+                            #y_offset = (self.held_item // 9) * (self.inventory_display_size + self.inventory_padding)
+                            #self.inventory_sprites[self.held_item].delete()
+                            #self.inventory_labels[self.held_item].delete()
+                            #self.inventory_sprites[self.held_item] = pyglet.sprite.Sprite(pyglet.image.load('sonobe.png'), x=self.inventory_padding + (self.inventory_padding + (self.inventory_display_size)) * (self.held_item%9), y=self.inventory_padding + y_offset)
+                            #self.inventory_sprites[self.held_item].scale = self.inventory_scale
+                            #self.inventory_sprites[self.held_item].color = textures[self.inventory[item][0]]
+                            #self.inventory_labels[self.held_item] = (pyglet.text.Label(str(self.inventory[item][1]), font_name='Arial', font_size=self.label_font_size, x=(self.inventory_padding + self.inventory_display_size * 0.4) + (self.inventory_padding + (self.inventory_display_size)) * (self.held_item%9), y=(self.inventory_padding + self.inventory_display_size * 0.7) + y_offset, anchor_x='left', anchor_y='top', color=(0, 0, 0, 255)))
+                        #self.inventory_sprites[item].y = y + dy
+                        break
             
-            
+    def on_mouse_release(self, x, y, button, modifiers):
+        if self.holding_item:
+            self.holding_item = False
+            for item in range(INVENTORY_SIZE):
+                    y_offset = (item // 9) * (self.inventory_display_size + self.inventory_padding)
+                    if x > self.inventory_padding + (item % 9) * (self.inventory_display_size + self.inventory_padding) and x < self.inventory_padding + self.inventory_display_size + (item%9) * (self.inventory_display_size + self.inventory_padding) and y > self.inventory_padding + y_offset and y < self.inventory_padding + y_offset + self.inventory_display_size:
+                        print("Released")
+                        print(item)
+                        if self.show_inventory:
+                            if self.inventory[item] == list():
+                                self.inventory[item] = self.inventory[self.held_item]
+                                self.inventory[self.held_item] = list()
+                                self.held_item = None
+                                self.holding_item = False
+                                
+                        break
+            self.update_inventory()
+        pass
 
-    def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
-        for item in range(INVENTORY_SIZE):
-                y_offset = (item // 9) * (self.inventory_display_size + self.inventory_padding)
-                if x > self.inventory_padding + (item % 9) * (self.inventory_display_size + self.inventory_padding) and x < self.inventory_padding + self.inventory_display_size + (item%9) * (self.inventory_display_size + self.inventory_padding) and y > self.inventory_padding + y_offset and y < self.inventory_padding + y_offset + self.inventory_display_size:
-                    print("Clicked")
-                    print(item)
-                    break
-                self.inventory_sprites[item].x = x + dx
-                self.inventory_sprites[item].y = y + dy
+    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        if self.holding_item and self.show_inventory:
+            self.inventory_sprites[self.held_item].x = x + dx - self.inventory_display_size/2
+            self.inventory_sprites[self.held_item].y = y + dy - self.inventory_display_size/2
+            self.inventory_labels[self.held_item].x = x + dx + self.inventory_display_size/16
+            self.inventory_labels[self.held_item].y = y + dy + self.inventory_display_size/4
         pass
 
     def on_mouse_motion(self, x, y, dx, dy):
@@ -1159,7 +1266,7 @@ class Window(pyglet.window.Window):
         self.reticle = pyglet.graphics.vertex_list(4,
             ('v2i', (x - n, y, x + n, y, x, y - n, x, y + n))
         )
-        self.init_inventory()
+        self.update_inventory()
 
     def set_2d(self):
         """ Configure OpenGL to draw in 2d.
@@ -1242,14 +1349,20 @@ class Window(pyglet.window.Window):
         """
         glColor3d(1, 1, 1)
         for item in range(INVENTORY_SIZE):
-            if item < 9 and item < len(self.inventory):
-                self.inventory_sprites[item].draw()
-                self.inventory_labels[item].draw()
-            elif self.show_inventory and item < len(self.inventory):
-                self.inventory_sprites[item].draw()
-                self.inventory_labels[item].draw()
+            if item < 9 and item < len(self.inventory_labels) and not self.inventory[item] == list():
+                if self.inventory_sprites[item] and not self.inventory_labels[item] == None:
+                    self.inventory_sprites[item].draw()
+                    self.inventory_labels[item].draw()
+            elif self.show_inventory and item < len(self.inventory_labels) and not self.inventory[item] == list():
+                if self.inventory_sprites[item] and not self.inventory_labels[item] == None:
+                    self.inventory_sprites[item].draw()
+                    self.inventory_labels[item].draw()
             elif self.show_inventory or item < 9:
-                self.inventory_sprites[item].draw()
+                if self.inventory_sprites[item]:
+                    self.inventory_sprites[item].draw()
+        if self.holding_item:
+            self.inventory_sprites[self.held_item].draw()
+            self.inventory_labels[self.held_item].draw()
 
     def draw_label(self):
         """ Draw the label in the top left of the screen.
