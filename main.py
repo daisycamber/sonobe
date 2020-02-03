@@ -15,6 +15,8 @@ from pyglet.window import key, mouse
 import pickle
 import os
 
+import threading
+
 SAVE_PATH = pyglet.resource.get_settings_path('sonobe')
 print("Game path is")
 print(SAVE_PATH)
@@ -27,7 +29,7 @@ TICKS_PER_SEC = 60
 # Size of sectors used to ease block loading.
 SECTOR_SIZE = 16
 
-
+GENERATE_FREQUENCY = 5
 
 WALKING_SPEED = 5
 FLYING_SPEED = 15
@@ -55,16 +57,16 @@ FLOOD_LIMIT = 100
 INVENTORY_SIZE = 9 * 4
 
 # How many chunks in front of the player to render
-view_distance = 3
+view_distance = 4
 
 # Size of the map
-mapSize = 2048
+mapSize = 1024
 
 noiseOffsetX = mapSize * SECTOR_SIZE * random.randrange(0,10)
 noiseOffsetY = mapSize * SECTOR_SIZE * random.randrange(0,10)
 
 # OpenGL has limits. This is the max sector we can travel to before we are teleported back to the middle sector
-maxSector = mapSize * 5
+maxSector = mapSize * 4
 
 # Noise settings
 shape = (1024,1024)
@@ -74,8 +76,6 @@ persistence = 0.5
 lacunarity = 2.0
 
 
-
-waterHeight = random.randrange(10,15)
 
 runtime = 0
 
@@ -108,7 +108,7 @@ def quad_verticies(x,y,n):
     ]
 
 
-def tex_coord(x, y, n=2): # N is number of textures - 1
+def tex_coord(x, y, n=4): # N is number of textures - 1
     """ Return the bounding vertices of the texture square.
     """
     m = 1.0 / n
@@ -242,7 +242,7 @@ def sectorize(position):
 
 class Model(object):
 
-    def __init__(self):
+    def __init__(self, window):
 
         # A Batch is a collection of vertex lists for batched rendering.
         self.batch = pyglet.graphics.Batch()
@@ -261,6 +261,8 @@ class Model(object):
             #self.world = {}
         self.world = {}
 
+        self.exposed_blocks = list()
+
         # Same mapping as `world` but only contains blocks that are shown.
         self.shown = {}
 
@@ -277,7 +279,7 @@ class Model(object):
         # _show_block() and _hide_block() calls
         self.queue = deque()
         
-        
+        self.window = window
         
         self._initialize()
 
@@ -293,10 +295,18 @@ class Model(object):
                 loaded_world = pickle.load(file)
                 noiseOffsetX = loaded_world[0]
                 noiseOffsetY = loaded_world[1]
-                world = loaded_world[2]
-                for position in world:
-                    self.add_block(position, world[position], immediate=False, show=False)
+                self.water_height = loaded_world[2]
+                exposed_blocks = loaded_world[3]
+                world = loaded_world[4]
+                for position in exposed_blocks:
+                    relative_position = (maxSector * SECTOR_SIZE * 0.5 + position[0],position[1],maxSector * SECTOR_SIZE * 0.5 + position[2])
+                    if position in world:
+                        self.add_block(position, world[position], immediate=False, show=False)
+                        self.exposed_blocks.append(position)
+                self.world = world
         except:
+            self.water_height = random.randrange(10,15)
+            #self.generate_sectors(None, self.window.sector, 5, False)
             print("Failed to load world")
 
     def save_world(self):
@@ -306,6 +316,8 @@ class Model(object):
             world_save = list()
             world_save.append(noiseOffsetX)
             world_save.append(noiseOffsetY)
+            world_save.append(self.water_height)
+            world_save.append(self.exposed_blocks)
             world_save.append(self.world)
             pickle.dump(world_save, file)
 
@@ -363,10 +375,11 @@ class Model(object):
         """
         if position in self.world:
             self.remove_block(position, immediate)
-        self.world[position] = texture
-        self.sectors.setdefault(sectorize(position), []).append(position)
+        self.world[get_world_pos(position)] = texture
+        self.exposed_blocks.append(position)
+        self.sectors.setdefault(sectorize(get_world_pos(position)), []).append(get_world_pos(position)) # position not get_world_pos
         if immediate and show:
-            if texture == WATER and position[1] == waterHeight or (self.exposed(position) and texture != WATER):
+            if texture == WATER and position[1] == self.water_height or (self.exposed(position) and texture != WATER):
                 self.show_block(position)
             
             self.check_neighbors(position)
@@ -382,7 +395,14 @@ class Model(object):
         """
         world_pos = get_world_pos(position)
         del self.world[world_pos]
-        self.sectors[sectorize(world_pos)].remove(world_pos)
+        try:
+            self.sectors[sectorize(world_pos)].remove(world_pos)
+        except:
+            try:
+                self.sectors[sectorize(position)].remove(position)
+            except:
+                pass
+                #print(position)
         if immediate:
             if world_pos in self.shown:
                 self.hide_block(position) # TODO fix to world_pos when neccesary
@@ -397,10 +417,16 @@ class Model(object):
         x, y, z = position
         for dx, dy, dz in FACES:
             key = (x + dx, y + dy, z + dz)
-            if get_world_pos(key) not in self.world:
+            world_pos = get_world_pos(key)
+            if world_pos not in self.world:
                 continue
-            if self.exposed(get_world_pos(key)):
-                if get_world_pos(key) not in self.shown:
+            if self.exposed(key): # TODO check if this works
+                if not world_pos in self.sectors[sectorize(world_pos)]:
+                    tex = self.world[world_pos]
+                    self.add_block(key, tex, immediate=True)
+                    print("Added block")
+                    #self.check_neighbors(key)
+                if world_pos not in self.shown:
                     self.show_block(key)
             else:
                 if get_world_pos(key) in self.shown:
@@ -426,6 +452,9 @@ class Model(object):
         if immediate:
             self._show_block(position, texture) # TODO change to position not world_pos
         else:
+            #t1 = threading.Thread(target=self.model.generate_sectors, args=(before, after, immediate)) 
+        #t1.start() 
+            #threading.Thread(target=self._show_block, args=(self,position, texture,)).start()
             self._enqueue(self._show_block, position, texture)
 
     def _show_block(self, position, texture):
@@ -481,8 +510,12 @@ class Model(object):
         try:
             self.shown.pop(world_pos)
         except:
-            print("Failed to hide block")
-            print(world_pos)
+            try:
+                self.shown.pop(position)
+            except:
+                pass
+            #print("Failed to hide block")
+            #print(world_pos)
         if immediate:
             self._hide_block(world_pos)
         else:
@@ -497,12 +530,14 @@ class Model(object):
             try:
                 self._shown.pop(get_world_pos(position)).delete()
             except:
-                print("Failed to hide block at ")
-                print(position)
+                None
+                #print("Failed to hide block at ")
+                #print(position)
 
     def add_ore(self, position, size, ore):
         x,y,z = position
-        self.add_block(position, ore, immediate=False)
+        #self.add_block(position, ore, immediate=False)
+        self.world[position] = ore
         if size > 0:
             for dx, dy, dz in FACES:
                 if get_world_pos((x + dx, y + dy, z + dz)) in self.world and self.world[get_world_pos((x + dx, y + dy, z + dz))] == STONE:
@@ -524,36 +559,48 @@ class Model(object):
                                     lacunarity=lacunarity, 
                                     repeatx=1024, 
                                     repeaty=1024, 
-                                    base=0) * 30 + 10
+                                    base=0) * 30 + 15
                     # Add a layer of bedrock
                     self.add_block((mapSector[0] * SECTOR_SIZE + x, 0 - 1, mapSector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
                     
                     for y in xrange(int(terrainHeight)): # Stone layer
-                        self.add_block((mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z), STONE, immediate=False)
-
-                    for y in xrange(5): # Sand layer
-                        self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
-                    
-                    if terrainHeight < waterHeight: # Add water
-                        for y in xrange(waterHeight - int(terrainHeight)): # Water layer
+                    #    self.add_block((mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z), STONE, immediate=False)
+                        self.world[(mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z)] = STONE
+                    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
+                    for y in xrange(4): # Sand layer
+                    #    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
+                        self.world[(mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z)] = SAND
+                    if terrainHeight < self.water_height: # Add water
+                        for y in xrange(self.water_height - int(terrainHeight)): # Water layer
                             self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), WATER, immediate=False)
-                            #if y != waterHeight - int(terrainHeight):
-                            #    self.hide_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), True)
+                            if y != self.water_height - int(terrainHeight):
+                                self.hide_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), True)
                     else:
                         for y in xrange(5): # Dirt layer
-                            self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+                            #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+                            self.world[(mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z)] = DIRT
+                            
                         # Grass layer
                         self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
                         if x > 0 and x < 15 and z > 0 and z < 15:
                             surface.append((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
+                        else:
+                            #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+                            #self.check_neighbors((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
+                            for minusy in range(5):
+                                if self.exposed((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 4 - minusy, mapSector[2] * SECTOR_SIZE + z)):
+                                    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 4 - minusy, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+                            #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5 - 2, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+                            #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5 - 3, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+                            #self.check_neighbors((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
         # Add ores
         for x in range(ORES_PER_SECTOR):
             self.add_ore((mapSector[0] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE), random.randrange(0,int(terrainHeight)), mapSector[2] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE)), random.randrange(ORE_MIN,ORE_MAX), random.randrange(COAL_ORE, TEST_BLOCK5+1))
 
-        if terrainHeight > waterHeight and len(surface) > 5:
+        if terrainHeight > self.water_height and len(surface) > 5:
             terrainHeight = int(terrainHeight) + 6
             # Add trees
-            for x in xrange(2):
+            for x in xrange(5):
                 treePos = surface[random.randrange(0, len(surface))]
                 treeHeight = random.randrange(5,10)
                 for y in xrange(treeHeight):
@@ -586,9 +633,16 @@ class Model(object):
             pos = list(position)
             pos[0] = pos[0] % SECTOR_SIZE
             pos[2] = pos[2] % SECTOR_SIZE
+            sector_pos = list(position)
+            sector_pos[0] = sector_pos[0] // SECTOR_SIZE
+            sector_pos[2] = sector_pos[2] // SECTOR_SIZE
+            #if not (sector_pos[0] > 0 and sector_pos[0] < 15 and sector_pos[2] > 0 and sector_pos[2] < 15):
+            #    self.check_neighbors(position)
             p = (int(pos[0]) + ((sector[0]) * SECTOR_SIZE),int(pos[1]),int(pos[2]) + (sector[2] * SECTOR_SIZE))
             if p not in self.shown and self.exposed(position): # p
                 self.show_block(p, immediate=False) # Map position is the position of the sector on the map
+                #self.check_neighbors(get_world_pos(p))
+            
         #for position in self.sectors.get(sector, []):
         #    if position not in self.shown and self.exposed(position):
         #        self.show_block(position, False)
@@ -624,18 +678,18 @@ class Model(object):
         hide = before_set - after_set
         self.show = show
         for sector in show:
-            self.show_sector(sector)
+            threading.Thread(target=self.show_sector, args=(sector,)).start() 
         for sector in hide:
             self.hide_sector(sector)
 
-    def generate_sectors(self, before, after, immediate=True):
+    def generate_sectors(self, before, after, radius, immediate=True):
         """ Move from sector `before` to sector `after`. A sector is a
         contiguous x, y sub-region of world. Sectors are used to speed up
         world rendering.
         """
         before_set = set()
         after_set = set()
-        pad = view_distance + 1
+        pad = view_distance + radius
         for dx in xrange(-pad, pad + 1):
             for dy in [0]:  # xrange(-pad, pad + 1):
                 for dz in xrange(-pad, pad + 1):
@@ -717,7 +771,7 @@ class Window(pyglet.window.Window):
 
         # Current (x, y, z) position in the world, specified with floats. Note
         # that, perhaps unlike in math class, the y-axis is the vertical axis.
-        self.position = (maxSector * SECTOR_SIZE * 0.5, 100, maxSector * SECTOR_SIZE * 0.5)
+        self.position = (maxSector * SECTOR_SIZE * 0.5 + mapSize * SECTOR_SIZE * 0.5, 100, maxSector * SECTOR_SIZE * 0.25 + mapSize * SECTOR_SIZE * 0.5)
 
         # First element is rotation of the player in the x-z plane (ground
         # plane) measured from the z-axis down. The second is the rotation
@@ -755,13 +809,15 @@ class Window(pyglet.window.Window):
         self.inventory_display_size = 0
         self.inventory_padding = 0
 
+        self.changed_sector = 1000 # Some large number
+
         # Convenience list of num keys.
         self.num_keys = [
             key._1, key._2, key._3, key._4, key._5,
             key._6, key._7, key._8, key._9, key._0]
 
         # Instance of the model that handles the world.
-        self.model = Model()
+        self.model = Model(self)
 
         # The label that is displayed in the top left of the canvas.
         self.label = pyglet.text.Label('', font_name='Arial', font_size=18,
@@ -775,11 +831,13 @@ class Window(pyglet.window.Window):
 
         # Generate the initial sectors
         sector = sectorize(self.position)
-        self.model.generate_sectors(self.sector, sector, False)
+        # TODO uncomment this
+        #self.model.generate_sectors(self.sector, sector,10, False)
 
 
 
         self.update_inventory()
+
 
     def load_player(self):
         try:
@@ -789,7 +847,7 @@ class Window(pyglet.window.Window):
                 self.inventory = player[1]
         except:
             print("Failed to load inventory")
-            self.position = (maxSector * SECTOR_SIZE * 0.5, 100, maxSector * SECTOR_SIZE * 0.5)
+            self.position = (maxSector * SECTOR_SIZE * 0.5 + mapSize * SECTOR_SIZE * 0., 100, maxSector * SECTOR_SIZE * 0.5 + mapSize * SECTOR_SIZE * 0.)
             self.inventory = list()
             for x in range(INVENTORY_SIZE):
                 self.inventory.append(list())
@@ -908,6 +966,12 @@ class Window(pyglet.window.Window):
         self.model.save_world()
         self.save_player()
 
+    def generate_and_change_sectors(self, before, after, immediate=False):
+        #t1 = threading.Thread(target=self.model.generate_sectors, args=(before, after, immediate)) 
+        #t1.start() 
+        #self.model._enqueue(self.model.change_sectors, self.sector, sector)
+        self.model.change_sectors(before,after)
+
     def update(self, dt):
         """ This method is scheduled to be called repeatedly by the pyglet
         clock.
@@ -919,10 +983,16 @@ class Window(pyglet.window.Window):
         self.model.process_queue()
         sector = sectorize(self.position)
         if sector != self.sector:
+            self.changed_sector = self.changed_sector + 1
+            if self.changed_sector > 5:
+                print("Changed sector")
+                t1 = threading.Thread(target=self.model.generate_sectors, args=(None, self.sector, 5, True)) 
+                t1.start() 
+                self.changed_sector = 0
             #self.model.generate_sectors(self.sector, sector, False)
-            #self.model.change_sectors(self.sector, sector)
-            self.model._enqueue(self.model.generate_sectors, self.sector, sector, False)
-            self.model._enqueue(self.model.change_sectors, self.sector, sector)
+            
+            self.model.change_sectors(self.sector, sector)
+            #self.generate_and_change_sectors(self.sector, sector, False)
             if self.sector is None:
                 self.model.process_entire_queue()
             self.sector = sector
@@ -930,7 +1000,6 @@ class Window(pyglet.window.Window):
         if self.runtime % 1000 == 0:
             print("Saving world")
             self.save()
-
         m = 8
         dt = min(dt, 0.2)
         for _ in xrange(m):
@@ -1118,9 +1187,10 @@ class Window(pyglet.window.Window):
                     print("Clicked")
                     if self.collect_block(block):
                         self.update_inventory()
-                        self.model.remove_block(block)
-                        self.model.hide_block(get_world_pos(block))
+                        self.model.remove_block(block, immediate=True)
+                        self.model.hide_block(get_world_pos(block)) # get_world_pos(block)
                         self.water_fill_logic(block)
+
         else: 
             # If the inventory was not clicked on lock the pointer
             if x > 9 * (self.inventory_display_size + self.inventory_padding) + self.inventory_padding or y > (INVENTORY_SIZE // 9) * (self.inventory_display_size + self.inventory_padding) + self.inventory_padding:
