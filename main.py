@@ -70,10 +70,12 @@ maxSector = mapSize * 4
 
 # Noise settings
 shape = (1024,1024)
-scale = 100.0
+scale = 30.0
 octaves = 6
 persistence = 0.5
 lacunarity = 2.0
+
+terrainRepeat = (mapSize * SECTOR_SIZE)/scale
 
 
 
@@ -543,78 +545,120 @@ class Model(object):
                 if get_world_pos((x + dx, y + dy, z + dz)) in self.world and self.world[get_world_pos((x + dx, y + dy, z + dz))] == STONE:
                     self.add_ore(get_world_pos((x + dx, y + dy, z + dz)), size-1, ore)
 
+    def perlin(self,x,y):
+        return noise.pnoise2(x, y, octaves=octaves, persistence=persistence, lacunarity=lacunarity, repeatx=terrainRepeat, repeaty=terrainRepeat, base=0)
+    def perlin_3d(self,x,y,z):
+        AB = self.perlin(x,y)
+        BC = self.perlin(y,z)
+        AC = self.perlin(x,z)
+
+        BA = self.perlin(y,x)
+        CB = self.perlin(z,y)
+        CA = self.perlin(z,x)
+
+        ABC = AB + BC + AC + BA + CB + CA
+        return ABC/6
+
     # Generate a section of the world randomly
     def generate_sector(self, mapSector, sector, show=True):
         terrainHeight = 0
         surface = []
         surfaceCount = 0
-        
+
+        surface = {}
         for x in xrange(SECTOR_SIZE):
-                for z in xrange(SECTOR_SIZE):
-                    # Get the height of the terrain from perlin noise
-                    terrainHeight = noise.pnoise2((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale, 
-                                    (noiseOffsetY + mapSector[2] * SECTOR_SIZE + z)/scale, 
-                                    octaves=octaves, 
-                                    persistence=persistence, 
-                                    lacunarity=lacunarity, 
-                                    repeatx=1024, 
-                                    repeaty=1024, 
-                                    base=0) * 30 + 15
-                    # Add a layer of bedrock
-                    self.add_block((mapSector[0] * SECTOR_SIZE + x, 0 - 1, mapSector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
+            for z in xrange(SECTOR_SIZE):
+                self.add_block((mapSector[0] * SECTOR_SIZE + x, 0 - 1, mapSector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
+                for y in xrange(32):
+                    #print(self.perlin_3d((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale,(y)/scale,(noiseOffsetY + mapSector[2] * SECTOR_SIZE + z)/scale))
+                    if self.perlin_3d((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale,(y)/scale,(noiseOffsetY + mapSector[2] * SECTOR_SIZE + z)/scale) > -0.05:
+                        pos = (mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z)
+                        self.world[pos] = STONE
+                        surface[(x,z)] = pos
+        for x in xrange(SECTOR_SIZE):
+            for z in xrange(SECTOR_SIZE):
+                self.add_block(surface[(x,z)], GRASS, immediate=False)
+                        #if self.exposed(pos):
+                        #self.add_block(pos, STONE, immediate=False)
+        #for x in xrange(SECTOR_SIZE):
+        #    for z in xrange(SECTOR_SIZE):
+        #        for y in xrange(32):
+        #            if self.perlin_3d((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale,(y)/scale,(noiseOffsetY + mapSector[2] * SECTOR_SIZE + z)/scale) > -0.05:
+        #                pos = (mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z)
+        #                if pos in self.world and self.exposed(pos):
+        #                    self.add_block(pos, STONE, immediate=False)
+        #for x in xrange(SECTOR_SIZE):
+        #   for z in xrange(SECTOR_SIZE):        
+                        
+        #            # Get the height of the terrain from perlin noise
+        #            terrainHeight = noise.pnoise2((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale, 
+        #                            (noiseOffsetY + mapSector[2] * SECTOR_SIZE + z)/scale, 
+        #                            octaves=octaves, 
+        #                            persistence=persistence, 
+        #                            lacunarity=lacunarity, 
+        #                            repeatx=1024, 
+        #                            repeaty=1024, 
+        #                            base=0) * 30 + 15
+                    #terrain_height = int(self.perlin((noiseOffsetX + mapSector[0] * SECTOR_SIZE + x)/scale,(noiseOffsetX + mapSector[2] * SECTOR_SIZE + z)/scale) * 10 + 10)
+                    #for y in xrange(terrain_height):
+                    #    self.world[(mapSector[0] * SECTOR_SIZE + x, 32 + y, mapSector[2] * SECTOR_SIZE + z)] = DIRT
+                    #self.add_block((mapSector[0] * SECTOR_SIZE + x, 32 + terrain_height, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+
+        #  # Add a layer of bedrock
+        #            self.add_block((mapSector[0] * SECTOR_SIZE + x, 0 - 1, mapSector[2] * SECTOR_SIZE + z), BEDROCK, immediate=False)
                     
-                    for y in xrange(int(terrainHeight)): # Stone layer
+       #             for y in xrange(int(terrainHeight)): # Stone layer
                     #    self.add_block((mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z), STONE, immediate=False)
-                        self.world[(mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z)] = STONE
-                    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
-                    for y in xrange(4): # Sand layer
+        #                self.world[(mapSector[0] * SECTOR_SIZE + x, y, mapSector[2] * SECTOR_SIZE + z)] = STONE
+        #            self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
+        #            for y in xrange(4): # Sand layer
                     #    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), SAND, immediate=False)
-                        self.world[(mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z)] = SAND
-                    if terrainHeight < self.water_height: # Add water
-                        for y in xrange(self.water_height - int(terrainHeight)): # Water layer
-                            self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), WATER, immediate=False)
-                            if y != self.water_height - int(terrainHeight):
-                                self.hide_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), True)
-                    else:
-                        for y in xrange(5): # Dirt layer
+        #                self.world[(mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z)] = SAND
+        #            if terrainHeight < self.water_height: # Add water
+        #                for y in xrange(self.water_height - int(terrainHeight)): # Water layer
+        #                    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), WATER, immediate=False)
+        #                    if y != self.water_height - int(terrainHeight):
+        #                        self.hide_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y + 5, mapSector[2] * SECTOR_SIZE + z), True)
+        #            else:
+        #                for y in xrange(5): # Dirt layer
                             #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
-                            self.world[(mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z)] = DIRT
+        #                    self.world[(mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + y, mapSector[2] * SECTOR_SIZE + z)] = DIRT
                             
                         # Grass layer
-                        self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
-                        if x > 0 and x < 15 and z > 0 and z < 15:
-                            surface.append((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
-                        else:
+        #                self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
+        #                if x > 0 and x < 15 and z > 0 and z < 15:
+        #                   surface.append((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
+        #                else:
                             #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z), GRASS, immediate=False)
                             #self.check_neighbors((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
-                            for minusy in range(5):
-                                if self.exposed((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 4 - minusy, mapSector[2] * SECTOR_SIZE + z)):
-                                    self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 4 - minusy, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
+        #                    for minusy in range(5):
+        #                        if self.exposed((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 4 - minusy, mapSector[2] * SECTOR_SIZE + z)):
+        #                            self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 4 - minusy, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
                             #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5 - 2, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
                             #self.add_block((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5 - 3, mapSector[2] * SECTOR_SIZE + z), DIRT, immediate=False)
                             #self.check_neighbors((mapSector[0] * SECTOR_SIZE + x, int(terrainHeight) + 5, mapSector[2] * SECTOR_SIZE + z))
         # Add ores
-        for x in range(ORES_PER_SECTOR):
-            self.add_ore((mapSector[0] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE), random.randrange(0,int(terrainHeight)), mapSector[2] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE)), random.randrange(ORE_MIN,ORE_MAX), random.randrange(COAL_ORE, TEST_BLOCK5+1))
+        #for x in range(ORES_PER_SECTOR):
+        #    self.add_ore((mapSector[0] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE), random.randrange(0,int(terrainHeight)), mapSector[2] * SECTOR_SIZE + random.randrange(0,SECTOR_SIZE)), random.randrange(ORE_MIN,ORE_MAX), random.randrange(COAL_ORE, TEST_BLOCK5+1))
 
-        if terrainHeight > self.water_height and len(surface) > 5:
-            terrainHeight = int(terrainHeight) + 6
+        #if terrainHeight > self.water_height and len(surface) > 5:
+        #    terrainHeight = int(terrainHeight) + 6
             # Add trees
-            for x in xrange(5):
-                treePos = surface[random.randrange(0, len(surface))]
-                treeHeight = random.randrange(5,10)
-                for y in xrange(treeHeight):
-                    self.add_block((treePos[0],treePos[1]+y,treePos[2]), WOOD, immediate=False)
-                leavesHeight = random.randrange(3,treeHeight)
-                treePos = (treePos[0],treePos[1] + leavesHeight,treePos[2])
-                leavesPos = 0
-                for x in xrange(-1,2):
-                    for y in xrange(treeHeight - leavesHeight):
-                        for z in xrange(-1,2):
-                            leavesPos = (treePos[0]+x,treePos[1]+y,treePos[2]+z)
-                            if not leavesPos in self.world:
-                                self.add_block(leavesPos, LEAVES, immediate=False)
-                self.add_block((leavesPos[0]-1,leavesPos[1] + 1,leavesPos[2]-1), LEAVES, immediate=False)
+        #    for x in xrange(5):
+        #        treePos = surface[random.randrange(0, len(surface))]
+        #        treeHeight = random.randrange(5,10)
+        #        for y in xrange(treeHeight):
+        #            self.add_block((treePos[0],treePos[1]+y,treePos[2]), WOOD, immediate=False)
+        #        leavesHeight = random.randrange(3,treeHeight)
+        #        treePos = (treePos[0],treePos[1] + leavesHeight,treePos[2])
+        #        leavesPos = 0
+        #        for x in xrange(-1,2):
+        #            for y in xrange(treeHeight - leavesHeight):
+        #                for z in xrange(-1,2):
+        #                    leavesPos = (treePos[0]+x,treePos[1]+y,treePos[2]+z)
+        #                    if not leavesPos in self.world:
+        #                        self.add_block(leavesPos, LEAVES, immediate=False)
+        #        self.add_block((leavesPos[0]-1,leavesPos[1] + 1,leavesPos[2]-1), LEAVES, immediate=False)
 
 
     def show_sector(self, sector):
